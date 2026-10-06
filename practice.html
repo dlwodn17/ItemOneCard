@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang = "ko">
+<head>
+    <meta charset="UTF-8">
+    <title>원카드</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js" ></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        .game-board {
+            position: relative;
+            width: 100%;
+            height: 480px;
+            background-color: #34495e;
+            border-radius: 12px;
+            border: 3px solid #1abc9c;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+        }
+        .seat { position: absolute; font-weight: bold; padding: 6px 12px; background: rgba(0,0,0,0.6); border-radius: 6px; }
+        .seat-p3 { top: 15px; left: 50%; transform: translateX(-50%); }
+        .seat-p2 { top: 50%; left: 15px; transform: translateY(-50%); }
+        .seat-p4 { top: 50%; right: 15px; transform: translateY(-50%); }
+        .seat-p1 { bottom: 15px; left: 50%; transform: translateX(-50%); color: #f1c40f; }
+       
+        .center-area {
+            position: absolute;
+            top: 45%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            display: flex;
+            gap: 30px;
+            align-items: center;
+        }
+
+        .card-slot {
+            width: 90px;
+            height: 130px;
+            border: 2px dashed #7f8c8d;
+            border-radius: 8px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            background: rgba(0,0,0,0.2);
+        }
+
+        .deck-card {
+            width: 90px;
+            height: 130px;
+            background-color: #2980b9;
+            border: 2px solid #fff;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 2px 4px 8px rgba(0,0,0,0.3);
+        }
+
+       
+        .controls {
+            position: absolute;
+            top: 68%;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            color: #fff;
+        }
+        .btn-shuffle { background-color: #27ae60; }
+        .btn-deal { background-color: #e67e22; }
+        
+    </style>
+</head>
+<body>
+    <div class="container">
+        //게임판
+        <div class="game-board">
+            //플레이어들 위치
+            <div class="seat seat-p3" id="board-P3">P3</div>
+            <div class="seat seat-p2" id="board-P2">P2</div>
+            <div class="seat seat-p4" id="board-P4">P4</div>
+            <div class="seat seat-p1" id="board-P1">P1 (ME)</div>
+
+            <div class="center-area">
+                //덱위치
+                <div class="deck-card">
+                    <div>DECK</div>
+                    <div id="deck-count">54</div>
+                </div>
+                //카드버린더미 위치
+                <div class="card-slot">
+                    <span>버린 카드</span>
+                </div>
+            </div>
+
+            
+            <div class="controls">
+                <button class="btn btn-shuffle">SHUFFLE</button>
+                <button class="btn btn-deal">DEAL</button>
+            </div>
+        </div>
+
+        // 방정보 및 접속자 정보(플레이어, 관전자)  
+        <div class="info-panel">
+            <h3 id="my-role">연결 중...</h3>
+            <p id="room-id">방: -</p>
+        </div>
+
+        <div class="box">
+            <h4>플레이어 명단 (최대 4)</h4>
+            <div id="seat-P1">P1: (빈자리)</div>
+            <div id="seat-P2">P2: (빈자리)</div>
+            <div id="seat-P3">P3: (빈자리)</div>
+            <div id="seat-P4">P4: (빈자리)</div>
+        </div>
+
+        <div class="box">
+            <h4>관전자 명단 (최대 2)</h4>
+            <div id="spec-1">관전자 1: (빈자리)</div>
+            <div id="spec-2">관전자 2: (빈자리)</div>
+        </div>
+    </div>
+    <script>
+        const socket = io('http://localhost:3000');
+
+        const myRoleS= document.getElementById('my-role');
+        const roomIdS = document.getElementById('room-id');
+
+        // 1. 역할 및 방 번호 할당 수신
+        socket.on('initRole', ({ myRole, roomId }) => {
+            myRoleS.innerText = `내 역할: ${myRole}`;
+            roomIdS.innerText = `방 ID: ${roomId}`;
+        });
+
+        // 2. 방 상태 업데이트 수신 (접속/퇴장/승격 처리 확인)
+        socket.on('userStateUpdated', ({ players, spectators }) => {
+            // 내 역할 업데이트
+            const meP = players.find(p => p.socketId === socket.id);
+            const meS = spectators.find(s => s.socketId === socket.id);
+            if (meP) myRoleS.innerText = `내 역할: ${meP.id}`;
+            else if (meS) myRoleS.innerText = `내 역할: ${meS.id}`;
+
+            // 플레이어 자릿수 (P1 ~ P4) 초기화
+            for (let i = 1; i <= 4; i++) {
+                document.getElementById(`seat-P${i}`).innerText = `P${i}: (빈자리)`;
+                document.getElementById(`seat-P${i}`).className = '';
+            }
+
+            // 플레이어 채우기
+            players.forEach(p => {
+                const e = document.getElementById(`seat-${p.id}`);
+                if (e) {
+                    const isMe = p.socketId === socket.id;
+                    e.innerText = `${p.id}: ${p.socketId} ${isMe ? '★(나)' : ''}`;
+                    if (isMe) e.className = 'me';
+                }
+            });
+
+            // 관전자 자릿수 초기화
+            for (let i = 1; i <= 2; i++) {
+                document.getElementById(`spec-${i}`).innerText = `관전자 ${i}: (빈자리)`;
+                document.getElementById(`spec-${i}`).className = '';
+            }
+
+            //관전자 채우기
+            spectators.forEach((s, idx) => {
+                const e = document.getElementById(`spec-${idx + 1}`);
+                if (e) {
+                    const Me = s.socketId === socket.id;
+                    e.innerText = `${s.id}: ${s.socketId} ${Me ? '★(나)' : ''}`;
+                    if (Me) e.className = 'me';
+                }
+            });
+        });
+        
+    </script>
+</body>    
+</html>
+
+//=================================================
+// 애니메이션 구현 필요 - 카드 모션, 이모티콘, 덱 등등 
+//=================================================
+//https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js
+//https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js
+// 위에 두 라이브러리 참고
+
+
+//===============================
+// 전체적인 게임판 디자인 재구성 필요 
+//===============================
+
