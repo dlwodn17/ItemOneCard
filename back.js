@@ -215,6 +215,167 @@ function drawcard(){
     draw = true;
 }
 
+//=====================================================
+//  게임 플레이 파트 - 검증, 특수능력, 누적 규칙 구현
+//=====================================================
+
+function checksubmit(card, playerIndex) {
+    // 1. 현재 턴인 플레이어가 맞는지 확인
+    if (playerIndex !== currentturn) {
+        console.log("지금은 해당 플레이어의 차례가 아닙니다.");
+        return false;
+    }
+
+    if (submitzoneCards.length === 0) return false;
+    const topCard = submitzoneCards[submitzoneCards.length - 1];
+
+    // 조커를 내는 경우
+    if (card.type === 'joker') {
+        // 공격 누적 중인 경우
+        if (attackstack > 0) {
+            // 컬조는 아무 때나 방어/누적 가능, 흑조는 2/A/흑조/컬조 공격에 대응 가능 여부 체크
+            return true;
+        }
+        return true;
+    }
+
+    // 일반 카드 제출 조건
+    // 1) 공격 누적 중인 경우의 방어/추가 공격 카드 체크
+    if (attackstack > 0) {
+        return canDefendOrStack(card, topCard);
+    }
+
+    // 2) 일반 상황: 맨 위 카드와 숫자가 같거나, 문양이 같거나, 현재 지정된 문양(currentshape)과 같은 경우
+    const matchesNumber = (card.number === topCard.number);
+    const matchesShape = (card.shape === topCard.shape || card.shape === currentshape);
+
+    return matchesNumber || matchesShape;
+}
+
+function canDefendOrStack(card, topCard) {
+    // 공격 상황에서의 규칙 처리
+    // A: 3장 공격, 2: 2장 공격, 흑조: 5장, 컬조: 7장
+    if (topCard.number === 2) {
+        // 2의 공격은 2, A, 흑조, 컬조로 누적 가능, 3으로 방어 가능
+        if (card.number === 3) return true; // 방어
+        if (card.number === 2 || card.number === 1 || card.type === 'joker') return true;
+    } else if (topCard.number === 1) { // A
+        // A의 공격은 A, 흑조, 컬조로 누적 가능
+        if (card.number === 1 || card.type === 'joker') return true;
+    } else if (topCard.type === 'joker') {
+        if (topCard.jokerType === 'color') {
+            // 컬조는 위로 누적 불가, 드로우로 받아야 함
+            return false;
+        } else if (topCard.jokerType === 'black') {
+            // 흑조는 컬조로만 누적 가능
+            if (card.type === 'joker' && card.jokerType === 'color') return true;
+        }
+    }
+    return false;
+}
+
+function checkspecialcard(card) {
+    // 특수 카드 능력치 및 공격 스택 설정
+    if (card.type === 'joker') {
+        if (card.jokerType === 'color') {
+            attackstack += 7;
+        } else if (card.jokerType === 'black') {
+            attackstack += 5;
+        }
+        currentshape = 'joker';
+        return;
+    }
+
+    switch (card.number) {
+        case 1: // A
+            attackstack += 3;
+            break;
+        case 2: // 2
+            attackstack += 2;
+            break;
+        case 3: // 3 (2 방어용, 공격 스택 초기화 또는 유지 관리)
+            if (attackstack > 0) {
+                attackstack = 0; // 방어 성공 시 스택 해제
+            }
+            break;
+        case 7: // 7 (문양 변경)
+            // TODO: 플레이어가 원하는 문양(spade, heart, diamond, clover)을 선택하는 UI/로직 연동 필요
+            console.log("7번 카드 발동: 문양을 변경합니다.");
+            break;
+        case 11: // J (다음 사람 건너뛰기)
+            const step = undirection ? -1 : 1;
+            currentturn = (currentturn + step * 2 + 4) % 4;
+            console.log(`J 발동! 다다음 플레이어로 턴이 넘어갑니다.`);
+            return; // 일반 nextturn의 턴 증가를 상쇄하기 위해 직접 리턴 처리 가능
+        case 12: // Q (방향 전환)
+            undirection = !undirection;
+            console.log(`Q 발동! 플레이 방향이 ${undirection ? '반시계' : '시계'}방향으로 바뀝니다.`);
+            break;
+        case 13: // K (한 번 더 턴 진행)
+            console.log(`K 발동! 카드를 한 번 더 낼 수 있습니다.`);
+            // 현재 턴을 유지하기 위해 nextturn 호출을 건너뛰는 방식으로 처리
+            return 'keep_turn';
+    }
+    currentshape = card.shape;
+}
+
+function multiplecard(selectedCards) {
+    // 다중 카드 제출 (중복 숫자 누적) 처리
+    // 같은 숫자의 카드를 여러 장 냈을 때의 검증 및 적용
+    if (!selectedCards || selectedCards.length === 0) return false;
+    
+    const firstNumber = selectedCards[0].number;
+    for (let i = 1; i < selectedCards.length; i++) {
+        if (selectedCards[i].number !== firstNumber && selectedCards[i].type !== 'joker') {
+            return false; // 숫자가 다르면 동시 제출 불가
+        }
+    }
+    return true;
+}
+
+
+//==================================
+//  종료 판단 파트 - 원카드, 파산, 종료
+//==================================
+
+function checkonecard(playerIndex) {
+    const player = playerzone[playerIndex];
+    if (player.hand.length === 1) {
+        onecard = true;
+        console.log(`[원카드!] 플레이어 ${player.id}가 패가 1장 남았습니다!`);
+        // TODO: 제한 시간 내에 "원카드" 버튼을 누르지 못했을 경우 감점/드로우 처리 로직 추가
+    } else {
+        onecard = false;
+    }
+}
+
+function bankrupt(playerIndex) {
+    // 패가 15장 이상인 경우 파산 체크
+    const player = playerzone[playerIndex];
+    if (player.hand.length >= 15) {
+        console.log(`[파산] 플레이어 ${player.id}의 패가 15장을 초과하여 파산했습니다!`);
+        return true;
+    }
+    return false;
+}
+
+function gameover() {
+    // 1. 패가 0장이 된 플레이어가 있는지 검사
+    for (let i = 0; i < playerzone.length; i++) {
+        if (playerzone[i].hand.length === 0) {
+            console.log(`[게임 종료] 승리자 발생: 플레이어 ${playerzone[i].id}!`);
+            return { isOver: true, winner: playerzone[i].id };
+        }
+        // 2. 파산 플레이어 체크
+        if (bankrupt(i)) {
+            console.log(`[게임 종료] 플레이어 ${playerzone[i].id} 파산으로 인한 탈락`);
+            return { isOver: true, bankruptPlayer: playerzone[i].id };
+        }
+    }
+    return { isOver: false };
+}
+
+/*
 
 function checksubmit(){
 // submitzone에 플레이어가 선택한 카드가 제출 가능한지 검증하는 함수
@@ -285,3 +446,4 @@ function gameover(){
 // 1. checkonecard 함수로 원카드 상황 체크
 // 2. 패에 카드가 0장 되는 플레이어 체크 후 게임 종료    
 }
+*/
