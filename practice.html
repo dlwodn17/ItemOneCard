@@ -1,200 +1,387 @@
 <!DOCTYPE html>
-<html lang = "ko">
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>원카드</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js" ></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#397eb0">
+    <title>LAST ONE · 원카드 로비</title>
     <style>
-        .game-board {
-            position: relative;
-            width: 100%;
-            height: 480px;
-            background-color: #34495e;
-            border-radius: 12px;
-            border: 3px solid #1abc9c;
-            box-shadow: 0 8px 16px rgba(0,0,0,0.3);
+        /* 공통 디자인 */
+        :root {
+            --ink: #203b57;
+            --muted: #70869b;
+            --line: #d5e5f1;
+            --sky: #d5edfc;
+            --blue: #397eb0;
+            --paper: #fff;
         }
-        .seat { position: absolute; font-weight: bold; padding: 6px 12px; background: rgba(0,0,0,0.6); border-radius: 6px; }
-        .seat-p3 { top: 15px; left: 50%; transform: translateX(-50%); }
-        .seat-p2 { top: 50%; left: 15px; transform: translateY(-50%); }
-        .seat-p4 { top: 50%; right: 15px; transform: translateY(-50%); }
-        .seat-p1 { bottom: 15px; left: 50%; transform: translateX(-50%); color: #f1c40f; }
-       
-        .center-area {
-            position: absolute;
-            top: 45%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            display: flex;
-            gap: 30px;
-            align-items: center;
+        * { box-sizing: border-box; }
+        [hidden] { display: none !important; }
+        body {
+            margin: 0;
+            background: #edf6fc;
+            color: var(--ink);
+            font: 14px/1.6 "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
         }
+        button, input { font: inherit; }
+        button { cursor: pointer; }
+        button:disabled { cursor: not-allowed; opacity: .55; }
+        button:focus-visible, input:focus-visible {
+            outline: 3px solid #57a6de;
+            outline-offset: 3px;
+        }
+        h1, h2, h3, p { margin: 0; }
+        .app { max-width: 1100px; margin: auto; padding: 28px; }
+        .topbar { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+        .brand-mark {
+            display: grid; place-items: center;
+            width: 38px; height: 48px; border: 2px solid var(--blue);
+            border-radius: 8px; background: var(--sky); font: bold 27px Georgia, serif;
+        }
+        .brand-name { font: 900 23px "Arial Black", sans-serif; letter-spacing: -1px; }
+        .brand-caption { color: var(--muted); font-size: 11px; }
+        .preview-tag {
+            margin-left: auto; padding: 6px 11px; border-radius: 16px;
+            background: var(--sky); color: #416983; font-size: 12px;
+        }
+        .layout { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 20px; }
+        .panel { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; }
+        .profile { padding: 22px 16px; text-align: center; }
+        .avatar {
+            display: grid; place-items: center; flex: none;
+            width: 45px; height: 45px; border-radius: 14px;
+            background: var(--sky); color: var(--blue); font-size: 25px;
+        }
+        .profile .avatar { margin: 0 auto 12px; }
+        .profile h2 { font-size: 16px; }
+        .muted { color: var(--muted); font-size: 12px; }
+        .profile-details {
+            display: grid; gap: 12px; margin-top: 20px; padding-top: 17px;
+            border-top: 1px solid var(--line); text-align: left;
+        }
+        .profile-details span { display: block; color: var(--muted); font-size: 12px; }
+        .profile-details strong { font-size: 13px; }
+        .welcome { padding: 24px; background: var(--sky); margin-bottom: 18px; }
+        .welcome h1 { margin-bottom: 7px; font-size: 23px; }
+        .welcome p { color: #5d7c94; font-size: 13px; }
+        .room-panel { padding: 22px; }
+        .section-heading {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-wrap: wrap; gap: 12px; margin-bottom: 20px;
+        }
+        .section-heading h2 { font-size: 17px; }
+        .badge { padding: 4px 8px; border-radius: 6px; background: #eaf3fa; color: #5e7b92; font-size: 12px; }
+        .button {
+            padding: 9px 14px; border: 1px solid var(--line); border-radius: 8px;
+            background: var(--paper); color: var(--ink); font-weight: 700;
+        }
+        .button:hover { background: #eaf4fb; }
+        .button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+        .button.primary:hover { background: #2e6c9a; }
+        .rooms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+        .room-card { padding: 18px; border: 1px solid var(--line); border-radius: 10px; }
+        .room-card h3 { margin: 10px 0 5px; font-size: 15px; overflow-wrap: anywhere; }
+        .room-card-top, .room-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .room-card-footer { margin-top: 18px; padding-top: 13px; border-top: 1px solid var(--line); }
+        .empty-state { grid-column: 1 / -1; padding: 30px; text-align: center; color: var(--muted); }
+        .local-note { margin-top: 16px; color: var(--muted); font-size: 12px; }
 
-        .card-slot {
-            width: 90px;
-            height: 130px;
-            border: 2px dashed #7f8c8d;
-            border-radius: 8px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-weight: bold;
-            background: rgba(0,0,0,0.2);
+        /* 방 대기실 */
+        .screen-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-bottom: 18px; }
+        .screen-heading h1 { font-size: 21px; overflow-wrap: anywhere; }
+        .waiting-top {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-wrap: wrap; gap: 10px; padding: 20px; border-bottom: 1px solid var(--line);
         }
+        .waiting-seats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 20px; }
+        .waiting-seat {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            gap: 9px; min-height: 150px; padding: 16px;
+            border: 1px solid var(--line); border-radius: 10px; text-align: center;
+        }
+        .waiting-seat.mine { border-color: #8fbfe0; background: #edf7fd; }
+        .waiting-seat.empty { border-style: dashed; color: var(--muted); background: #f8fbfe; }
+        .waiting-seat strong { max-width: 100%; overflow-wrap: anywhere; }
 
-        .deck-card {
-            width: 90px;
-            height: 130px;
-            background-color: #2980b9;
-            border: 2px solid #fff;
-            border-radius: 8px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            cursor: pointer;
-            box-shadow: 2px 4px 8px rgba(0,0,0,0.3);
+        /* 방 만들기 팝업과 작은 화면 */
+        dialog {
+            width: min(420px, calc(100% - 32px)); padding: 22px;
+            border: 1px solid var(--line); border-radius: 14px;
+            color: var(--ink); background: var(--paper);
         }
-
-       
-        .controls {
-            position: absolute;
-            top: 68%;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 10px;
+        dialog::backdrop { background: #203b5766; }
+        .dialog-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 20px; }
+        .dialog-heading h2 { font-size: 19px; }
+        .close-button { padding: 2px 10px; border: 0; border-radius: 6px; background: #eaf3fa; color: var(--ink); font-size: 22px; }
+        .field-label { display: block; margin-bottom: 8px; font-weight: 700; }
+        .field { width: 100%; padding: 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); }
+        .dialog-hint { margin-top: 9px; color: var(--muted); font-size: 12px; }
+        .error { min-height: 22px; margin-top: 12px; color: #b15342; font-size: 13px; }
+        .dialog-submit { width: 100%; margin-top: 8px; }
+        @media (max-width: 760px) {
+            .app { padding: 18px; }
+            .layout { grid-template-columns: 1fr; }
+            .profile { display: flex; align-items: center; gap: 14px; padding: 16px; text-align: left; }
+            .profile .avatar { margin: 0; }
+            .profile-details { margin: 0 0 0 auto; padding: 0; border: 0; }
+            .profile-mode { display: none; }
         }
-        .btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            font-weight: bold;
-            cursor: pointer;
-            color: #fff;
+        @media (max-width: 480px) {
+            .app { padding: 14px; }
+            .brand-name { font-size: 20px; }
+            .preview-tag { font-size: 10px; padding: 5px 8px; }
+            .welcome, .room-panel { padding: 18px; }
+            .welcome h1 { font-size: 20px; }
+            .rooms { grid-template-columns: 1fr; }
+            .waiting-seats { padding: 14px; gap: 10px; }
+            .waiting-seat { min-height: 140px; padding: 10px; }
         }
-        .btn-shuffle { background-color: #27ae60; }
-        .btn-deal { background-color: #e67e22; }
-        
     </style>
 </head>
 <body>
-    <div class="container">
-        //게임판
-        <div class="game-board">
-            //플레이어들 위치
-            <div class="seat seat-p3" id="board-P3">P3</div>
-            <div class="seat seat-p2" id="board-P2">P2</div>
-            <div class="seat seat-p4" id="board-P4">P4</div>
-            <div class="seat seat-p1" id="board-P1">P1 (ME)</div>
-
-            <div class="center-area">
-                //덱위치
-                <div class="deck-card">
-                    <div>DECK</div>
-                    <div id="deck-count">54</div>
-                </div>
-                //카드버린더미 위치
-                <div class="card-slot">
-                    <span>버린 카드</span>
-                </div>
+    <div class="app">
+        <header class="topbar">
+            <span class="brand-mark" aria-hidden="true">1</span>
+            <div>
+                <div class="brand-name">LAST ONE</div>
+                <p class="brand-caption">아이템 원카드</p>
             </div>
+            <span class="preview-tag">로컬 시안</span>
+        </header>
 
-            
-            <div class="controls">
-                <button class="btn btn-shuffle">SHUFFLE</button>
-                <button class="btn btn-deal">DEAL</button>
-            </div>
-        </div>
+        <div class="layout">
+            <aside aria-label="내 정보">
+                <section class="panel profile">
+                    <div class="avatar" aria-hidden="true">♠</div>
+                    <div>
+                        <h2 id="profile-name"></h2>
+                        <p class="muted">로컬 플레이어</p>
+                    </div>
+                    <div class="profile-details">
+                        <div><span>현재 위치</span><strong id="profile-location">로비</strong></div>
+                        <div class="profile-mode"><span>게임 모드</span><strong>일반 원카드</strong></div>
+                    </div>
+                </section>
+            </aside>
 
-        // 방정보 및 접속자 정보(플레이어, 관전자)  
-        <div class="info-panel">
-            <h3 id="my-role">연결 중...</h3>
-            <p id="room-id">방: -</p>
-        </div>
+            <main>
+                <!-- 처음에는 로비만 표시 -->
+                <section data-screen="lobby" aria-labelledby="lobby-title">
+                    <div class="panel welcome">
+                        <h1 id="lobby-title" tabindex="-1">어떤 방에서 한 판 할까요?</h1>
+                        <p>함께할 방을 선택하거나 새로운 방을 만들어보세요.</p>
+                    </div>
+                    <section class="panel room-panel" aria-labelledby="room-list-title">
+                        <div class="section-heading">
+                            <h2 id="room-list-title">게임방 <span class="badge" id="room-count"></span></h2>
+                            <button class="button primary" id="open-create" type="button">+ 방 만들기</button>
+                        </div>
+                        <div class="rooms" id="room-list"></div>
+                        <p class="error" id="room-error" role="alert" hidden></p>
+                    </section>
+                </section>
 
-        <div class="box">
-            <h4>플레이어 명단 (최대 4)</h4>
-            <div id="seat-P1">P1: (빈자리)</div>
-            <div id="seat-P2">P2: (빈자리)</div>
-            <div id="seat-P3">P3: (빈자리)</div>
-            <div id="seat-P4">P4: (빈자리)</div>
-        </div>
-
-        <div class="box">
-            <h4>관전자 명단 (최대 2)</h4>
-            <div id="spec-1">관전자 1: (빈자리)</div>
-            <div id="spec-2">관전자 2: (빈자리)</div>
+                <!-- 방을 만들거나 선택하면 표시하는 대기실 -->
+                <section data-screen="waiting" hidden aria-labelledby="waiting-title">
+                    <div class="screen-heading">
+                        <button class="button" id="leave-room" type="button">← 로비로</button>
+                        <h1 id="waiting-title" tabindex="-1"></h1>
+                    </div>
+                    <section class="panel" aria-label="방 정보와 참가자">
+                        <div class="waiting-top">
+                            <div>
+                                <strong>일반 원카드 · 최대 4명</strong>
+                                <p class="muted" id="waiting-number"></p>
+                            </div>
+                            <span class="badge" id="waiting-count"></span>
+                        </div>
+                        <div class="waiting-seats" id="waiting-seats"></div>
+                    </section>
+                </section>
+                <p class="local-note">방과 참가자는 이 브라우저의 샘플 데이터이며, 서버와 연결되지 않음을 강조함.</p>
+            </main>
         </div>
     </div>
+
+    <dialog id="create-dialog" aria-labelledby="create-title">
+        <div class="dialog-heading">
+            <h2 id="create-title">새로운 방 만들기</h2>
+            <button class="close-button" id="close-create" type="button" aria-label="닫기">×</button>
+        </div>
+        <form id="create-form">
+            <label class="field-label" for="create-name">방 이름</label>
+            <input class="field" id="create-name" maxlength="40" placeholder="친구들과 즐거운 한 판" required>
+            <p class="dialog-hint">최대 40자 · 일반 원카드 · 최대 4명</p>
+            <p class="error" id="create-error" role="alert"></p>
+            <button class="button primary dialog-submit" type="submit">방 만들고 입장하기</button>
+        </form>
+    </dialog>
+
     <script>
-        const socket = io('http://localhost:3000');
+        'use strict';
 
-        const myRoleS= document.getElementById('my-role');
-        const roomIdS = document.getElementById('room-id');
-
-        // 1. 역할 및 방 번호 할당 수신
-        socket.on('initRole', ({ myRole, roomId }) => {
-            myRoleS.innerText = `내 역할: ${myRole}`;
-            roomIdS.innerText = `방 ID: ${roomId}`;
-        });
-
-        // 2. 방 상태 업데이트 수신 (접속/퇴장/승격 처리 확인)
-        socket.on('userStateUpdated', ({ players, spectators }) => {
-            // 내 역할 업데이트
-            const meP = players.find(p => p.socketId === socket.id);
-            const meS = spectators.find(s => s.socketId === socket.id);
-            if (meP) myRoleS.innerText = `내 역할: ${meP.id}`;
-            else if (meS) myRoleS.innerText = `내 역할: ${meS.id}`;
-
-            // 플레이어 자릿수 (P1 ~ P4) 초기화
-            for (let i = 1; i <= 4; i++) {
-                document.getElementById(`seat-P${i}`).innerText = `P${i}: (빈자리)`;
-                document.getElementById(`seat-P${i}`).className = '';
-            }
-
-            // 플레이어 채우기
-            players.forEach(p => {
-                const e = document.getElementById(`seat-${p.id}`);
-                if (e) {
-                    const isMe = p.socketId === socket.id;
-                    e.innerText = `${p.id}: ${p.socketId} ${isMe ? '★(나)' : ''}`;
-                    if (isMe) e.className = 'me';
+        // 1. 화면 시연에 사용하는 로컬 데이터임.
+        // 실제 방 번호와 참가자 정보는 서버 연동 시 서버에서 받을 것으로 추정.
+        // 공개 목록/초대 코드 정책은 아직 확정하지 않았음.
+        const $ = id => document.getElementById(id);
+        const escapeHTML = value => String(value).replace(/[&<>"']/g, character => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[character]));
+        const MAX_PLAYERS = 4;
+        const me = { id: 'local-me', name: '플레이어' };
+        const state = {
+            screen: 'lobby',
+            currentRoom: null,
+            nextRoomNumber: 1003,
+            rooms: [
+                {
+                    id: '1001', title: '방 이름 1', hostId: 'sample-1',
+                    members: [{ id: 'sample-1', name: '닉네임1' }, { id: 'sample-2', name: '닉네임11' }]
+                },
+                {
+                    id: '1002', title: '방 이름 2', hostId: 'sample-3',
+                    members: [{ id: 'sample-3', name: '닉네임2' }]
                 }
-            });
+            ]
+        };
 
-            // 관전자 자릿수 초기화
-            for (let i = 1; i <= 2; i++) {
-                document.getElementById(`spec-${i}`).innerText = `관전자 ${i}: (빈자리)`;
-                document.getElementById(`spec-${i}`).className = '';
+        // 2. 현재 데이터를 화면에 표시.
+        function showScreen(screen, focus = true) {
+            state.screen = screen;
+            document.querySelectorAll('[data-screen]').forEach(section => {
+                section.hidden = section.dataset.screen !== screen;
+            });
+            $('profile-location').textContent = screen === 'lobby' ? '로비' : '방 대기실';
+            if (focus) {
+                $(screen === 'lobby' ? 'lobby-title' : 'waiting-title').focus({ preventScroll: true });
             }
+        }
 
-            //관전자 채우기
-            spectators.forEach((s, idx) => {
-                const e = document.getElementById(`spec-${idx + 1}`);
-                if (e) {
-                    const Me = s.socketId === socket.id;
-                    e.innerText = `${s.id}: ${s.socketId} ${Me ? '★(나)' : ''}`;
-                    if (Me) e.className = 'me';
+        function renderRooms() {
+            $('room-error').textContent = '';
+            $('room-error').hidden = true;
+            $('room-count').textContent = `${state.rooms.length}개`;
+            $('room-list').innerHTML = state.rooms.map(room => {
+                const full = room.members.length >= MAX_PLAYERS;
+                const host = room.members.find(member => member.id === room.hostId);
+                return `
+                    <article class="room-card">
+                        <div class="room-card-top">
+                            <span class="muted">ROOM ${escapeHTML(room.id)}</span>
+                            <span class="badge">${full ? '정원 마감' : '대기 중'}</span>
+                        </div>
+                        <h3>${escapeHTML(room.title)}</h3>
+                        <p class="muted">방장 · ${escapeHTML(host?.name || '플레이어')}</p>
+                        <div class="room-card-footer">
+                            <span class="muted">참가자 ${room.members.length} / ${MAX_PLAYERS}</span>
+                            <button class="button" type="button" data-room-id="${escapeHTML(room.id)}"
+                                aria-label="${escapeHTML(room.title)} 입장" ${full ? 'disabled' : ''}>
+                                ${full ? '가득 참' : '입장하기'}
+                            </button>
+                        </div>
+                    </article>`;
+            }).join('') || '<p class="empty-state">아직 방이 없어요. 새로운 방을 만들어보세요.</p>';
+        }
+
+        function renderWaiting() {
+            const room = state.currentRoom;
+            if (!room) return;
+            $('waiting-title').textContent = room.title;
+            $('waiting-number').textContent = `ROOM ${room.id}`;
+            $('waiting-count').textContent = `참가자 ${room.members.length} / ${MAX_PLAYERS}`;
+            $('waiting-seats').innerHTML = Array.from({ length: MAX_PLAYERS }, (_, index) => {
+                const member = room.members[index];
+                if (!member) {
+                    return '<div class="waiting-seat empty"><strong>빈자리</strong><span class="muted">참가자를 기다리고 있어요</span></div>';
                 }
-            });
+                const mine = member.id === me.id;
+                const host = member.id === room.hostId;
+                return `
+                    <div class="waiting-seat ${mine ? 'mine' : ''}">
+                        <div class="avatar" aria-hidden="true">${mine ? '♠' : '♣'}</div>
+                        <strong>${escapeHTML(member.name)}${mine ? ' · 나' : ''}</strong>
+                        <span class="muted">${host ? '방장' : '참가자'}</span>
+                    </div>`;
+            }).join('');
+        }
+
+        // 3. 로컬 방 상태를 변경.
+        // 서버 연동 시 생성/입장/퇴장은 서버 요청과 승인 결과로 대체.
+        // 기존 서버의 접속 즉시 방 배정도 그때 별도로 조정해야 함.
+        function enterRoom(id) {
+            const room = state.rooms.find(candidate => candidate.id === id);
+            if (!room) return '해당 방이 없어요.';
+            if (state.currentRoom) return '먼저 현재 방에서 나와주세요.';
+            if (room.members.length >= MAX_PLAYERS) return '방이 가득 찼어요.';
+            room.members.push({ ...me });
+            state.currentRoom = room;
+            renderWaiting();
+            showScreen('waiting');
+            return null;
+        }
+
+        function makeRoom(title) {
+            if (state.currentRoom) return '먼저 현재 방에서 나와주세요.';
+            const name = title.trim();
+            if (!name) return '방 이름을 입력해주세요.';
+            if (name.length > 40) return '방 이름은 40자까지 입력할 수 있어요.';
+            const room = {
+                id: String(state.nextRoomNumber++),
+                title: name,
+                hostId: me.id,
+                members: []
+            };
+            state.rooms.unshift(room);
+            return enterRoom(room.id);
+        }
+
+        function leaveRoom() {
+            const room = state.currentRoom;
+            if (room) {
+                room.members = room.members.filter(member => member.id !== me.id);
+                if (!room.members.length) {
+                    state.rooms = state.rooms.filter(candidate => candidate !== room);
+                }
+            }
+            state.currentRoom = null;
+            renderRooms();
+            showScreen('lobby');
+        }
+
+        // 4. 버튼과 입력을 위 함수에 연결.
+        $('open-create').addEventListener('click', () => {
+            $('create-form').reset();
+            $('create-error').textContent = '';
+            $('create-dialog').showModal();
+            $('create-name').focus();
         });
-        
+        $('close-create').addEventListener('click', () => $('create-dialog').close());
+        $('create-form').addEventListener('submit', event => {
+            event.preventDefault();
+            const error = makeRoom($('create-name').value);
+            if (error) {
+                $('create-error').textContent = error;
+                return;
+            }
+            $('create-dialog').close();
+            $('waiting-title').focus({ preventScroll: true });
+        });
+        $('room-list').addEventListener('click', event => {
+            const button = event.target.closest('[data-room-id]');
+            if (!button || button.disabled) return;
+            const error = enterRoom(button.dataset.roomId);
+            if (error) {
+                renderRooms();
+                $('room-error').textContent = error;
+                $('room-error').hidden = false;
+            }
+        });
+        $('leave-room').addEventListener('click', leaveRoom);
+
+        // 5. 처음에는 자동으로 입장하지 않고 로비만 표시
+        $('profile-name').textContent = me.name;
+        renderRooms();
+        showScreen('lobby', false);
     </script>
-</body>    
+</body>
 </html>
-
-//=================================================
-// 애니메이션 구현 필요 - 카드 모션, 이모티콘, 덱 등등 
-//=================================================
-//https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js
-//https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js
-// 위에 두 라이브러리 참고
-
-
-//===============================
-// 전체적인 게임판 디자인 재구성 필요 
-//===============================
-
