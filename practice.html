@@ -79,7 +79,8 @@
         .button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
         .button.primary:hover { background: #2e6c9a; }
         .rooms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
-        .room-card { padding: 18px; border: 1px solid var(--line); border-radius: 10px; }
+        .room-card { padding: 18px; border: 1px solid var(--line); border-radius: 10px;background: var(--paper);
+            width: 100%;min-width: 0; }
         .room-card h3 { margin: 10px 0 5px; font-size: 15px; overflow-wrap: anywhere; }
         .room-card-top, .room-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
         .room-card-footer { margin-top: 18px; padding-top: 13px; border-top: 1px solid var(--line); }
@@ -186,6 +187,7 @@
                     <div class="screen-heading">
                         <button class="button" id="leave-room" type="button">← 로비로</button>
                         <h1 id="waiting-title" tabindex="-1"></h1>
+                        <button class="button primary" id="start-game" type="button" style="margin-left: auto;" disabled hidden>게임 시작</button>
                     </div>
                     <section class="panel" aria-label="방 정보와 참가자">
                         <div class="waiting-top">
@@ -198,7 +200,16 @@
                         <div class="waiting-seats" id="waiting-seats"></div>
                     </section>
                 </section>
-                <p class="local-note">방과 참가자는 이 브라우저의 샘플 데이터이며, 서버와 연결되지 않음을 강조함.</p>
+                <!-- 게임 실행 화면 안에 내용 지우고 수정해도 됨) -->
+                <section data-screen="game" hidden aria-labelledby="game-title">
+                    <div class="screen-heading">
+                        <h1 id="game-title" tabindex="-1">LAST ONE · 게임 진행 중</h1>
+                    </div>
+                    <section class="panel" style="padding: 24px; text-align: center;">
+                        <h2>🎮 게임판이 준비 중입니다!</h2>
+                        <p class="muted" style="margin-top: 10px;" id="game-info-text"></p>
+                    </section>
+                </section>
             </main>
         </div>
     </div>
@@ -217,33 +228,43 @@
         </form>
     </dialog>
 
+    <script src="/socket.io/socket.io.js"></script>
     <script>
         'use strict';
 
-        // 1. 화면 시연에 사용하는 로컬 데이터임.
-        // 실제 방 번호와 참가자 정보는 서버 연동 시 서버에서 받을 것으로 추정.
+        // 1. 로비 정보 
         // 공개 목록/초대 코드 정책은 아직 확정하지 않았음.
         const $ = id => document.getElementById(id);
         const escapeHTML = value => String(value).replace(/[&<>"']/g, character => ({
             '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
         }[character]));
+        // 소켓 서버연결 
+        const socket = io('http://localhost:3000');
         const MAX_PLAYERS = 4;
-        const me = { id: 'local-me', name: '플레이어' };
+        const MAX_CAPACITY = 6;
+        const me = { id: 'user_' + Math.random().toString(36).substr(2, 9), name: '플레이어_' + Math.floor(Math.random() * 100)};
         const state = {
             screen: 'lobby',
             currentRoom: null,
-            nextRoomNumber: 1003,
-            rooms: [
-                {
-                    id: '1001', title: '방 이름 1', hostId: 'sample-1',
-                    members: [{ id: 'sample-1', name: '닉네임1' }, { id: 'sample-2', name: '닉네임11' }]
-                },
-                {
-                    id: '1002', title: '방 이름 2', hostId: 'sample-3',
-                    members: [{ id: 'sample-3', name: '닉네임2' }]
-                }
-            ]
+            rooms: [],
         };
+
+        // 접속하자마자 서버에 현재 방 목록 달라고 요청
+        socket.emit('getRoomList');
+
+        // 서버로부터 방 목록 응답 받기
+        socket.on('roomListResponse', (serverRooms) => {
+            state.rooms = serverRooms;
+            renderRooms();
+        });
+
+        // 실시간 방 목록 갱신 
+        socket.on('roomListUpdated', (serverRooms) => {
+            state.rooms = serverRooms;
+            if (state.screen === 'lobby') {
+                renderRooms();
+            }
+        });
 
         // 2. 현재 데이터를 화면에 표시.
         function showScreen(screen, focus = true) {
@@ -251,137 +272,213 @@
             document.querySelectorAll('[data-screen]').forEach(section => {
                 section.hidden = section.dataset.screen !== screen;
             });
-            $('profile-location').textContent = screen === 'lobby' ? '로비' : '방 대기실';
+            if (screen === 'lobby') {
+                $('profile-location').textContent = '로비';
+            } else if (screen === 'waiting') {
+                $('profile-location').textContent = '방 대기실';
+            } else if (screen === 'game') {
+                $('profile-location').textContent = '게임 중';
+            }
+
             if (focus) {
                 $(screen === 'lobby' ? 'lobby-title' : 'waiting-title').focus({ preventScroll: true });
             }
         }
-
+        
+        //3. 방 렌더링 함수.
+        //기존에 로컬로 하드코딩 되있는 부분 소켓 연결하면서 삭제함
+        //현재 위치: 대기 중, 정원 마감에서 게임 중 추가
+        //상태: 입장하기, 가득참에서 진행 중 추가
+        //방이 가득찼는지 플레이어 수, 관전자 수 카운트해서 상태 업데이트
         function renderRooms() {
-            $('room-error').textContent = '';
-            $('room-error').hidden = true;
+            $('room-error').textContent = '';$('room-error').hidden = true;
             $('room-count').textContent = `${state.rooms.length}개`;
+            
+        
             $('room-list').innerHTML = state.rooms.map(room => {
-                const full = room.members.length >= MAX_PLAYERS;
-                const host = room.members.find(member => member.id === room.hostId);
+                const full = room.isFull;
+                const playing = room.isPlaying;
+                const pCount = room.playerCount || 0;
+                const sCount = room.specCount || 0;
+
+                let badgeText = '대기 중';
+                if (playing) {
+                    badgeText = '게임 중';
+                } else if (full) {
+                    badgeText = '정원 마감';
+                }
+
                 return `
                     <article class="room-card">
                         <div class="room-card-top">
                             <span class="muted">ROOM ${escapeHTML(room.id)}</span>
-                            <span class="badge">${full ? '정원 마감' : '대기 중'}</span>
+                            <span class="badge">${badgeText}</span>
                         </div>
                         <h3>${escapeHTML(room.title)}</h3>
-                        <p class="muted">방장 · ${escapeHTML(host?.name || '플레이어')}</p>
+                        <p class="muted">방장 · ${escapeHTML(room.hostName)}</p>
                         <div class="room-card-footer">
-                            <span class="muted">참가자 ${room.members.length} / ${MAX_PLAYERS}</span>
-                            <button class="button" type="button" data-room-id="${escapeHTML(room.id)}"
+                            <span class="muted">참가자 ${pCount} / ${MAX_PLAYERS}</span>
+                            <span class="muted">관전자 ${sCount} / ${MAX_CAPACITY - MAX_PLAYERS}</span>
+                            <button class="button ${playing||full ? '' : 'primary'}" type="button" data-room-id="${escapeHTML(room.id)}"
                                 aria-label="${escapeHTML(room.title)} 입장" ${full ? 'disabled' : ''}>
-                                ${full ? '가득 참' : '입장하기'}
+                                ${playing? '진행 중' : (full ? '가득 참' : '입장하기')}
                             </button>
                         </div>
                     </article>`;
             }).join('') || '<p class="empty-state">아직 방이 없어요. 새로운 방을 만들어보세요.</p>';
+        
         }
 
-        function renderWaiting() {
+        //4. 대기방 로직.
+        // 기존에 플레이어 4명 다 차면 방 닫히는 로직 플레이어 4명 모이면 방장이 게임 시작할 수 있는 조건으로 변경
+        // 플레이어가 한명 빠질 때마다 들어온 순서대로 한칸 씩 땡겨지는 백엔드 로직에 따라 방장/플레이어/관전자 표시
+        // 꼭 방이 풀방 아니더라도 플레이어 4명 모이면 방장한테 게임시작 버튼 뜸
+       function renderWaiting() {
             const room = state.currentRoom;
             if (!room) return;
             $('waiting-title').textContent = room.title;
             $('waiting-number').textContent = `ROOM ${room.id}`;
-            $('waiting-count').textContent = `참가자 ${room.members.length} / ${MAX_PLAYERS}`;
-            $('waiting-seats').innerHTML = Array.from({ length: MAX_PLAYERS }, (_, index) => {
-                const member = room.members[index];
-                if (!member) {
-                    return '<div class="waiting-seat empty"><strong>빈자리</strong><span class="muted">참가자를 기다리고 있어요</span></div>';
-                }
-                const mine = member.id === me.id;
-                const host = member.id === room.hostId;
-                return `
-                    <div class="waiting-seat ${mine ? 'mine' : ''}">
-                        <div class="avatar" aria-hidden="true">${mine ? '♠' : '♣'}</div>
-                        <strong>${escapeHTML(member.name)}${mine ? ' · 나' : ''}</strong>
-                        <span class="muted">${host ? '방장' : '참가자'}</span>
-                    </div>`;
-            }).join('');
-        }
+            
+            const players = room.players || [];
+            const spectators = room.spectators || [];
+            const totalMembers = players.length + spectators.length;
+            $('waiting-count').textContent = `참가자 ${totalMembers} / ${MAX_CAPACITY}명`; 
+            
+            const seatsContainer = $('waiting-seats');
+            const isFullPlayers = players.length === MAX_PLAYERS;
+            const startBtn = $('start-game');
+            const isUserHost = room.hostId === socket.id;
+            
+            if (isUserHost) {
+                startBtn.hidden = false;
+                startBtn.disabled = !isFullPlayers;
+                startBtn.textContent = isFullPlayers ? '게임 시작' : `대기 중 (${players.length}/4)`;
+            } else {
+                startBtn.hidden = true;
+            }
 
-        // 3. 로컬 방 상태를 변경.
-        // 서버 연동 시 생성/입장/퇴장은 서버 요청과 승인 결과로 대체.
-        // 기존 서버의 접속 즉시 방 배정도 그때 별도로 조정해야 함.
-        function enterRoom(id) {
-            const room = state.rooms.find(candidate => candidate.id === id);
-            if (!room) return '해당 방이 없어요.';
-            if (state.currentRoom) return '먼저 현재 방에서 나와주세요.';
-            if (room.members.length >= MAX_PLAYERS) return '방이 가득 찼어요.';
-            room.members.push({ ...me });
-            state.currentRoom = room;
-            renderWaiting();
-            showScreen('waiting');
-            return null;
-        }
+            let html = '';
 
-        function makeRoom(title) {
-            if (state.currentRoom) return '먼저 현재 방에서 나와주세요.';
-            const name = title.trim();
-            if (!name) return '방 이름을 입력해주세요.';
-            if (name.length > 40) return '방 이름은 40자까지 입력할 수 있어요.';
-            const room = {
-                id: String(state.nextRoomNumber++),
-                title: name,
-                hostId: me.id,
-                members: []
-            };
-            state.rooms.unshift(room);
-            return enterRoom(room.id);
-        }
-
-        function leaveRoom() {
-            const room = state.currentRoom;
-            if (room) {
-                room.members = room.members.filter(member => member.id !== me.id);
-                if (!room.members.length) {
-                    state.rooms = state.rooms.filter(candidate => candidate !== room);
+            for (let i = 1; i <= MAX_PLAYERS; i++) {
+                const player = players.find(p => p.id === `P${i}`);
+                if (!player) {
+                    html += `<div class="waiting-seat empty"><strong>P${i} 빈자리</strong><span class="muted">참가자를 기다리고 있어요</span></div>`;
+                } else {
+                    const mine = player.socketId === socket.id;
+                    const isHost = player.socketId === room.hostId;
+                    html += `
+                        <div class="waiting-seat ${mine ? 'mine' : ''}">
+                            <div class="avatar" aria-hidden="true">${mine ? '♠' : '♣'}</div>
+                            <strong>${escapeHTML(player.name)}${mine ? ' · 나' : ''}</strong>
+                            <span class="muted">${isHost ? '👑 방장' : '플레이어'} (${player.id})</span>
+                        </div>`;
                 }
             }
-            state.currentRoom = null;
-            renderRooms();
-            showScreen('lobby');
+
+            for(let i = 1; i <= MAX_CAPACITY - MAX_PLAYERS; i++) {
+                const spec = spectators.find(s => s.id === `관전자${i}`);
+                if (!spec) {
+                    html += `<div class="waiting-seat empty" style="border-style: dashed; background: #fafbfc;"><strong>관전자 ${i} 빈자리</strong><span class="muted">관전 대기 중</span></div>`;
+                } else {
+                    const mine = spec.socketId === socket.id;
+                    const isHost = spec.socketId === room.hostId;
+                    html += `
+                        <div class="waiting-seat ${mine ? 'mine' : ''}">
+                            <div class="avatar" aria-hidden="true">👁️</div>
+                            <strong>${escapeHTML(spec.name)}${mine ? ' · 나' : ''}</strong>
+                            <span class="muted">${isHost ? '방장' : '관전자'} (${spec.id})</span>
+                        </div>`;
+                }
+            }
+            
+            seatsContainer.innerHTML = html;
+            
         }
 
-        // 4. 버튼과 입력을 위 함수에 연결.
-        $('open-create').addEventListener('click', () => {
-            $('create-form').reset();
-            $('create-error').textContent = '';
-            $('create-dialog').showModal();
-            $('create-name').focus();
+        $('start-game').addEventListener('click', () => {
+            socket.emit('startGame');
         });
-        $('close-create').addEventListener('click', () => $('create-dialog').close());
+
+        // 서버로부터 게임 시작 신호를 받았을 때 게임판 화면으로 전환
+        // 게임판 전환까지는 구현, 게임판 구성 및 디자인은 고쳐야 함!
+        socket.on('gameStart', ({ players, hostId }) => {
+            showScreen('game'); // 게임 화면으로 전환
+
+            const myPlayer = players.find(p => p.socketId === socket.id);
+            const mySpectator = spectators ? spectators.find(s => s.socketId === socket.id) : null;
+            
+            let roleText = '참가자';
+            if (myPlayer) {
+                roleText = `${myPlayer.id} (플레이어)`;
+            } else if (mySpectator) {
+                roleText = `${mySpectator.id} (관전자)`;
+            }
+
+            $('game-info-text').textContent = `참가 완료! 내 역할: ${roleText} (${me.name})`;
+            console.log('게임 시작 데이터 수신:', players);
+        });
+
+        // 서버로부터 방 입장 성공 신호를 받았을 때
+       socket.on('joinRoomSuccess', ({ roomId, myRole, roomData }) => {
+            state.currentRoom = roomData;
+            renderWaiting();
+            showScreen('waiting'); 
+        });
+
+        // 방 안의 유저 상태(입장/퇴장/승격)가 실시간으로 바뀔 때
+        socket.on('roomStateUpdated', ({ players, spectators,hostId }) => {
+            if (state.currentRoom) {
+                state.currentRoom.players = players;
+                state.currentRoom.spectators = spectators;
+                if (hostId) state.currentRoom.hostId = hostId;
+                renderWaiting();
+            }
+        });
+
+        // 에러 메시지 수신 시
+        socket.on('errorMsg', (msg) => {
+            alert(msg);
+        });
+
+        // 버튼 이벤트 리스너 연결
+        $('open-create').addEventListener('click', () => {
+            $('create-form').reset();$('create-error').textContent = '';
+            $('create-dialog').showModal();$('create-name').focus();
+        });
+
+        $('close-create').addEventListener('click', () =>$('create-dialog').close());
+
+        // 방 만들기 폼 제출 -> 서버로 'createRoom' 이벤트 전송
         $('create-form').addEventListener('submit', event => {
             event.preventDefault();
-            const error = makeRoom($('create-name').value);
-            if (error) {
-                $('create-error').textContent = error;
+            const title = $('create-name').value.trim();
+            if (!title) {
+                $('create-error').textContent = '방 이름을 입력해주세요.';
                 return;
             }
+            socket.emit('createRoom', { title, playerName: me.name });
             $('create-dialog').close();
-            $('waiting-title').focus({ preventScroll: true });
         });
+
+        // 방 목록에서 '입장하기' 클릭 -> 서버로 'joinRoom' 이벤트 전송
         $('room-list').addEventListener('click', event => {
             const button = event.target.closest('[data-room-id]');
             if (!button || button.disabled) return;
-            const error = enterRoom(button.dataset.roomId);
-            if (error) {
-                renderRooms();
-                $('room-error').textContent = error;
-                $('room-error').hidden = false;
-            }
+            socket.emit('joinRoom', { roomId: button.dataset.roomId, playerName: me.name });
         });
-        $('leave-room').addEventListener('click', leaveRoom);
 
-        // 5. 처음에는 자동으로 입장하지 않고 로비만 표시
+        // '로비로 나가기' 클릭 -> 서버로 'leaveRoom' 이벤트 전송
+        $('leave-room').addEventListener('click', () => {
+            socket.emit('leaveRoom');
+            state.currentRoom = null;
+            showScreen('lobby');
+            socket.emit('getRoomList'); // 로비 돌아와서 방 목록 새로고침
+        });
+
+        // 초기 실행
         $('profile-name').textContent = me.name;
-        renderRooms();
         showScreen('lobby', false);
+
     </script>
 </body>
 </html>
