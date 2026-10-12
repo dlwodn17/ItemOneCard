@@ -457,36 +457,37 @@ function bankrupt(playerIndex) {
 }
 
 function gameover() {
+    // 파산 없음, 패 0장이 된 순서대로 등수 결정. 마지막에 남은 사람이 꼴등.
     // 1. 패가 0장이 된 생존 플레이어 승리 검사
     for (let i = 0; i < playerzone.length; i++) {
         const player = playerzone[i];
         if (!player.isEliminated && player.hand.length === 0) {
-            console.log(`[게임 종료] 승리자 발생: 플레이어 ${player.id}! (패 0장 달성)`);
-            return { isOver: true, winner: player.id, reason: 'card_cleared' };
+            console.log(`승리자 발생: 플레이어 ${player.id}! (패 0장 달성)`);
+            return { isOver: false, winner: player.id, reason: 'card_cleared' };
         }
     }
-
+    /*
     // 2. 파산 검사 (15장 이상 보유한 미탈락자 탈락 처리)
     for (let i = 0; i < playerzone.length; i++) {
         bankrupt(i);
     }
-
+    */
     // 3. 생존 플레이어 수 확인
     const activePlayers = playerzone.filter(p => !p.isEliminated);
 
-    // 남은 플레이어가 1명이면 그 플레이어가 최후의 승자!
+    // 남은 플레이어가 1명이면 그 플레이어가 꼴등
     if (activePlayers.length === 1) {
-        const winner = activePlayers[0];
-        console.log(`[게임 종료] 다른 모든 플레이어 파산 탈락! 최후의 생존자: 플레이어 ${winner.id} 승리!`);
-        return { isOver: true, winner: winner.id, reason: 'last_survivor' };
+        const loser = activePlayers[0];
+        console.log(`[게임 종료] 플레이어 ${loser.id} 꼴등!`);
+        return { isOver: true, winner: loser.id, reason: 'last_player' };
     }
-
+    /*
     // 모든 플레이어가 동시 파산한 예외 경우
     if (activePlayers.length === 0) {
         console.log(`[게임 종료] 모든 플레이어가 파산했습니다. (무승부)`);
         return { isOver: true, winner: null, reason: 'draw' };
     }
-
+    */
     return { isOver: false };
 }
 
