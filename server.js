@@ -20,7 +20,7 @@ const rooms = {}; // 방 배열
 let players = []; // 플레이어 리스트
 let spectators = []; // 관전자 리스트
 let roomCounter = 1001;// 방 번호 시작점
-
+let lobbyUsers=[];//로비에 있는 플레이어 리스트
 
 
 //1.전체 소켓 처리
@@ -30,6 +30,19 @@ io.on('connection',(socket) => {
     //유저 접속 시
     console.log(`신규 접속: ${socket.id}`);
     socket.currentRoomId = null;
+
+    //플레이어명 전달
+    lobbyUsers.push({ socketId: socket.id, name: '플레이어' });
+    io.emit('lobbyUsersUpdated', lobbyUsers);
+
+    //로비 유저 목록 업데이트
+    socket.on('setUserName',(name)=>{
+        const user = lobbyUsers.find(u => u.socketId == socket.id);
+        if(user){
+            user.name = name;
+            io.emit('lobbyUsersUpdated',lobbyUsers);
+        }
+    }); 
     
     //방 목록 요청 처리 
     socket.on('getRoomList', () => {
@@ -104,6 +117,8 @@ io.on('connection',(socket) => {
     socket.on('disconnect',() => {
         console.log(`접속 해제: ${socket.id}`);
         processUserExit(socket);
+        lobbyUsers = lobbyUsers.filter(u=>u.socketId!=socket.id);
+        io.emit('lobbyUsersUpdated',lobbyUsers);
     });
 
     //게임 시작 처리
@@ -176,12 +191,17 @@ function processUserExit(socket){
         // 플레이어 퇴장처리
         const playerId = target.players.findIndex(p => p.socketId === socket.id);
         if(playerId != -1){
-            target.players.splice(playerId,1);
+            if(target.isPlaying){
+                //아직 게임 종료 함수 안만들어져서 null로 플레이어 안 꼬이게 설정
+                target.players[playerIndex] = null;
+            }else{
+                target.players.splice(playerId,1);
 
-            // 관전자 -> 플레이어로 승격
-            if(target.spectators.length > 0 && target.players.length < MAX_PLAYERS){
-                const nextplayer = target.spectators.shift();
-                target.players.push(nextplayer);
+                // 관전자 -> 플레이어로 승격
+                if(target.spectators.length > 0 && target.players.length < MAX_PLAYERS){
+                    const nextplayer = target.spectators.shift();
+                    target.players.push(nextplayer);
+                }
             }
          }else{// 관전자 퇴장처리
             const specId = target.spectators.findIndex(s => s.socketId === socket.id);
@@ -195,15 +215,18 @@ function processUserExit(socket){
        
 
         // 방에 아무도 없으면 방삭제 아니면 플레이어 상태 동기화
+        const ativePlayersCount = target.players.filter(Boolean).length;
         const totalRemain =target.players.length + target.spectators.length;
+        
         if (totalRemain === 0) {
             delete rooms[currentRoomId];
             console.log(`방 삭제됨: ${currentRoomId}`);
         } else {
-            const hostStillExists = [...target.players, ...target.spectators].some(m => m.socketId === target.hostId);
+            const hostStillExists = [...target.players.filter[Boolean], ...target.spectators].some(m => m.socketId === target.hostId);
             if (wasHost || !hostStillExists) {
+                const vaildPlayers = target.players.filter(Boolean);
                 if (target.players.length > 0) {
-                    target.hostId = target.players[0].socketId; // 남은 플레이어 중 첫 번째 사람에게 위임
+                    target.hostId = vaildPlayers[0].socketId; // 남은 플레이어 중 첫 번째 사람에게 위임
                 } else if (target.spectators.length > 0) {
                     target.hostId = target.spectators[0].socketId; // 플레이어가 없으면 관전자 중 첫 번째 사람에게 위임
                 }

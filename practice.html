@@ -137,6 +137,186 @@
             .waiting-seats { padding: 14px; gap: 10px; }
             .waiting-seat { min-height: 140px; padding: 10px; }
         }
+        /* ===== 추가 UI: 기존 공통 스타일과 서버 스크립트는 위/아래에 보존 ===== */
+        .app { max-width: 1420px; }
+        .layout { grid-template-columns: 200px minmax(0, 1fr); gap: 22px; }
+        main, aside { min-width: 0; }
+        .welcome { padding: 18px 22px; }
+        .welcome h1 { font-size: 21px; }
+        .room-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+        .room-panel .section-heading { margin-bottom: 16px; }
+        .room-board { position: relative; }
+        .rooms, .room-slots {
+            display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+            grid-template-rows: repeat(4, 148px); gap: 12px;
+        }
+        .rooms { position: relative; z-index: 1; }
+        .room-slots { position: absolute; inset: 0; pointer-events: none; }
+        .room-slots span { border: 1px dashed #d6e5ef; border-radius: 10px; background: #f7fbfe; }
+        .room-card { height: 148px; padding: 13px 16px; }
+        .room-card h3 { margin: 6px 0 2px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+        .room-card-top .badge { padding: 2px 7px; font-size: 11px; }
+        .room-card > .muted { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .room-card-footer { gap: 6px; margin-top: 9px; padding-top: 9px; }
+        .room-card-footer .button { padding: 5px 10px; font-size: 12px; }
+        .room-card-footer .muted { font-size: 11px; }
+        .empty-state { grid-column: 1 / -1; grid-row: 1 / -1; place-self: center; background: #f7fbfe; border-radius: 12px; }
+        .room-pagination { display: flex; justify-content: center; align-items: center; gap: 16px; padding-top: 18px; }
+        .room-pagination .button { padding: 5px 12px; }
+        .room-pagination output { min-width: 55px; text-align: center; font-variant-numeric: tabular-nums; }
+
+        /* 로비 접속자: 실제 전체 목록 수신 기능은 추가 JS의 주석 참고 */
+        .online-panel { margin-top: 18px; padding: 18px 15px; }
+        .online-panel h2 { font-size: 14px; padding-bottom: 13px; border-bottom: 1px solid var(--line); }
+        .online-users { list-style: none; padding: 0; margin: 12px 0 0; min-height: 280px; max-height: 380px; overflow-y: auto; }
+        .online-users li { display: flex; align-items: center; gap: 9px; padding: 9px 0; overflow-wrap: anywhere; }
+        .online-dot { width: 7px; height: 7px; flex: none; border-radius: 50%; background: #72b7c3; }
+        .online-users small { color: var(--muted); }
+
+        /* 로비 화면과 방 화면에 나오는 채팅: 입력창을 항상 패널 맨 아래에 배치 */
+        .chat-panel { display: flex; flex-direction: column; height: 248px; margin-top: 18px; overflow: hidden; }
+        .chat-heading { padding: 13px 18px; border-bottom: 1px solid var(--line); }
+        .chat-heading h2 { font-size: 14px; }
+        .chat-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 18px; }
+        .chat-empty { color: var(--muted); font-size: 12px; margin-top: 7px; }
+        .chat-message { margin-bottom: 8px; overflow-wrap: anywhere; font-size: 13px; }
+        .chat-message strong { color: var(--blue); margin-right: 8px; }
+        .chat-message time { color: var(--muted); font-size: 10px; margin-right: 8px; }
+        .chat-form { display: flex; gap: 8px; padding: 12px; background: #f7fbfe; border-top: 1px solid var(--line); }
+        .chat-form input { flex: 1; min-width: 0; background: #fff; }
+        .chat-form .button { flex: none; }
+        .room-type { border: 0; padding: 0; margin: 18px 0 0; }
+        .room-type legend { font-weight: 700; margin-bottom: 8px; }
+        .room-type-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .room-type label { display: flex; align-items: center; gap: 7px; padding: 11px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+        .room-type label:has(input:checked) { background: #edf7fd; border-color: #82b6da; }
+        .room-type input { accent-color: var(--blue); }
+
+        /* 인게임: 동서남북 자리와 중앙 더미. 대기실의 기존 좌석 구조는 유지. */
+        body[data-ui-screen="game"] .layout { grid-template-columns: 1fr; }
+        body[data-ui-screen="game"] aside { display: none; }
+        .game-heading { justify-content: space-between; }
+        .game-heading h1 { font-size: 20px; }
+        .game-layout { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 18px; }
+        .game-table {
+            position: relative; display: grid;
+            grid-template-columns: 125px minmax(180px, 1fr) 125px;
+            grid-template-rows: 130px minmax(180px, 1fr) 185px;
+            min-height: 580px; gap: 12px; padding: 24px 18px 10px;
+            border: 7px solid #b6d1e4; border-radius: 30px;
+            background: radial-gradient(ellipse at 50% 45%, #e8f6fc 0, #c6e5f2 65%, #b9dbe9 100%);
+            box-shadow: inset 0 0 0 2px #f3fbff, inset 0 0 55px #6eabc23d, 0 12px 28px #203b570d;
+        }
+        .table-watermark { position: absolute; left: 50%; top: 26%; transform: translateX(-50%); font: 900 15px Arial, sans-serif; letter-spacing: 4px; color: #6c9ab054; pointer-events: none; }
+        .table-seat { min-width: 0; text-align: center; z-index: 1; }
+        .seat-north { grid-column: 2; grid-row: 1; }
+        .seat-west { grid-column: 1; grid-row: 2; align-self: center; }
+        .seat-east { grid-column: 3; grid-row: 2; align-self: center; }
+        .seat-south { grid-column: 1 / -1; grid-row: 3; align-self: end; }
+        .seat-label { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 7px; }
+        .seat-direction { display: inline-grid; place-items: center; width: 23px; height: 23px; border-radius: 7px; color: #5e879e; background: #ffffffa6; font-size: 11px; }
+        .seat-name { display: block; font-size: 12px; overflow-wrap: anywhere; }
+        .seat-card-count { color: #5f8197; font-size: 11px; }
+        .opponent-hand { display: flex; justify-content: center; padding: 12px 8px 5px 20px; min-height: 67px; }
+        .card-back-mini { width: 29px; height: 43px; margin-left: -13px; border: 2px solid white; border-radius: 5px; background: repeating-linear-gradient(45deg, #6b9fc5, #6b9fc5 3px, #79abce 3px, #79abce 6px); box-shadow: 0 2px 3px #203b5726; }
+        .seat-west .opponent-hand { transform: rotate(12deg); }
+        .seat-east .opponent-hand { transform: rotate(-12deg); }
+        .table-center { grid-column: 2; grid-row: 2; display: flex; align-items: center; justify-content: center; gap: 28px; }
+        .pile { display: flex; align-items: center; flex-direction: column; gap: 10px; min-width: 78px; }
+        .pile-caption { color: #54778e; font-size: 11px; font-weight: 700; }
+        .draw-pile, .discard-card { width: 76px; height: 110px; border: 3px solid #fff; border-radius: 9px; }
+        .draw-pile { position: relative; display: grid; place-items: center; background: repeating-linear-gradient(45deg, #5f96be, #5f96be 4px, #6da2c8 4px, #6da2c8 8px); color: #fff; box-shadow: 3px 3px 0 #eaf5fa, 5px 5px 0 #9bbdcf, 7px 7px 0 #eaf5fa, 9px 9px 0 #8aafc3, 0 12px 18px #203b572e; transition: transform .18s; }
+        .draw-pile:not(:disabled):hover { transform: translateY(-4px); }
+        .draw-pile:disabled { opacity: 1; }
+        .draw-pile span { border: 1px solid #d8eaf5b3; border-radius: 6px; padding: 12px 7px; font: 900 12px/1.5 Arial, sans-serif; }
+        .discard-slot { width: 76px; height: 110px; }
+        .discard-card { position: relative; display: grid; place-items: center; background: #fff; color: #29445d; box-shadow: 0 5px 12px #203b5726; transform: rotate(5deg); }
+        .discard-card .card-suit { font-size: 36px; }
+        .card-rank { position: absolute; top: 5px; left: 7px; font-size: 17px; font-weight: 800; }
+        .card-rank-bottom { position: absolute; right: 7px; bottom: 4px; font-size: 17px; font-weight: 800; transform: rotate(180deg); }
+        .card-red { color: #c25e64; }
+        .my-hand { display: flex; align-items: flex-end; justify-content: flex-start; gap: 5px; max-width: 100%; width: max-content; margin: auto; min-height: 145px; padding: 24px 10px 12px; overflow-x: auto; }
+        .hand-card { position: relative; flex: 0 0 66px; height: 98px; display: grid; place-items: center; padding: 0; border: 1px solid #c2d4e1; border-radius: 8px; background: #fff; color: #29445d; box-shadow: 0 4px 8px #203b5721; transition: transform .18s, box-shadow .18s; }
+        .hand-card .card-suit { font-size: 30px; }
+        .hand-card.card-red { color: #c25e64; }
+        .hand-card:not(:disabled):hover, .hand-card:not(:disabled):focus-visible { transform: translateY(-12px); box-shadow: 0 12px 17px #203b572b; }
+        .hand-card:disabled { opacity: 1; }
+        .hand-card.is-blocked { filter: brightness(.57) saturate(.5); box-shadow: none; }
+        .game-rule { margin-top: 12px; text-align: center; font-size: 12px; color: var(--muted); }
+        .game-sidebar { display: flex; flex-direction: column; min-width: 0; }
+        .game-room-info { padding: 16px; }
+        .game-room-info strong { display: block; overflow-wrap: anywhere; }
+        #game-info-text { margin-top: 6px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+        .game-sidebar .chat-panel { height: auto; min-height: 330px; flex: 1; margin-top: 14px; }
+        #game-chat-slot { display: flex; flex: 1; min-height: 0; }
+        #game-chat-slot .chat-panel { width: 100%; }
+        .game-spectators { display: block; margin-top: 8px; color: var(--muted); font-size: 12px; }
+        .screen-slide-in { animation: screen-slide-in .55s cubic-bezier(.22,.68,.25,1) both; }
+        .card-arriving { animation: card-arriving .5s cubic-bezier(.2,.7,.25,1) both; }
+        .card-leaving { animation: card-leaving .32s ease-in forwards; pointer-events: none; }
+        .discard-arriving { animation: discard-arriving .42s ease-out both; }
+        .pile-drawing { animation: pile-drawing .2s ease-out; }
+        @keyframes screen-slide-in { from { opacity: 0; transform: translateX(70px); } to { opacity: 1; transform: translateX(0); } }
+        @keyframes card-arriving { from { opacity: 0; transform: translateY(-55px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes card-leaving { from { opacity: 1; transform: translateY(-12px); } to { opacity: 0; transform: translateY(-75px); } }
+        @keyframes discard-arriving { from { opacity: 0; transform: translateY(-10px) rotate(-4deg); } to { opacity: 1; transform: translateY(0) rotate(5deg); } }
+        @keyframes pile-drawing { 50% { transform: translateY(-5px) rotate(-2deg); } }
+        @media (max-width: 1150px) {
+            .game-layout { grid-template-columns: 1fr; }
+            .game-sidebar { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 14px; }
+            .game-sidebar .chat-panel { margin-top: 0; min-height: 235px; height: 235px; }
+        }
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 170px minmax(0, 1fr); gap: 14px; }
+            .room-panel { padding: 16px; }
+            .room-card { padding: 13px 11px; }
+            .room-card-footer { flex-wrap: wrap; }
+            .room-card-footer .button { margin-left: auto; }
+            .room-actions .button { padding: 8px 10px; font-size: 12px; }
+        }
+        @media (max-width: 760px) {
+            .layout { grid-template-columns: 1fr; }
+            .online-panel { margin-top: 12px; padding: 12px 16px; }
+            .online-panel h2 { display: inline-block; padding: 0; border: 0; margin-right: 15px; }
+            .online-users { display: inline-flex; flex-wrap: wrap; gap: 14px; min-height: 0; max-height: 100px; margin: 0; vertical-align: middle; }
+            .online-users li { padding: 0; }
+            .room-card-footer { flex-wrap: nowrap; }
+            .game-table { grid-template-columns: 90px minmax(155px, 1fr) 90px; padding: 18px 9px 6px; gap: 5px; min-height: 560px; }
+            .table-center { gap: 16px; }
+            .game-sidebar { grid-template-columns: 1fr; }
+            .game-sidebar .chat-panel { height: 245px; }
+        }
+        @media (max-width: 480px) {
+            .room-panel { padding: 12px; }
+            .room-panel .section-heading { gap: 10px; }
+            .room-actions { width: 100%; }
+            .room-actions .button { flex: 1; padding: 8px 4px; }
+            .rooms, .room-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(4, 156px); gap: 8px; }
+            .room-card { height: 156px; padding: 10px; }
+            .room-card-top { align-items: start; gap: 3px; }
+            .room-card-top .muted { font-size: 10px; }
+            .room-card-top .badge { font-size: 9px; padding: 2px 4px; }
+            .room-card h3 { font-size: 13px; margin-top: 8px; }
+            .room-card-footer { flex-wrap: wrap; margin-top: 8px; padding-top: 6px; column-gap: 7px; row-gap: 3px; }
+            .room-card-footer .muted { font-size: 10px; }
+            .room-card-footer .button { width: 100%; padding: 3px; margin: 0; font-size: 11px; }
+            .game-table { grid-template-columns: 56px minmax(134px, 1fr) 56px; gap: 4px; border-width: 5px; border-radius: 20px; }
+            .draw-pile, .discard-card, .discard-slot { width: 60px; height: 88px; }
+            .pile { min-width: 60px; }
+            .table-center { gap: 14px; }
+            .hand-card { flex-basis: 57px; height: 87px; }
+            .hand-card .card-suit { font-size: 25px; }
+            .seat-name { font-size: 11px; }
+            .seat-direction { display: none; }
+            .opponent-hand { padding-left: 14px; padding-right: 0; }
+            .card-back-mini { width: 22px; height: 36px; margin-left: -13px; }
+            .table-watermark { font-size: 11px; letter-spacing: 2px; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            .screen-slide-in, .card-arriving, .card-leaving, .discard-arriving, .pile-drawing { animation: none; }
+            .hand-card, .draw-pile { transition: none; }
+        }
+
     </style>
 </head>
 <body>
@@ -147,7 +327,7 @@
                 <div class="brand-name">LAST ONE</div>
                 <p class="brand-caption">아이템 원카드</p>
             </div>
-            <span class="preview-tag">로컬 시안</span>
+            <span class="preview-tag">일반 원카드 · 4인</span>
         </header>
 
         <div class="layout">
@@ -156,12 +336,16 @@
                     <div class="avatar" aria-hidden="true">♠</div>
                     <div>
                         <h2 id="profile-name"></h2>
-                        <p class="muted">로컬 플레이어</p>
+                        <p class="muted">플레이어</p>
                     </div>
                     <div class="profile-details">
                         <div><span>현재 위치</span><strong id="profile-location">로비</strong></div>
                         <div class="profile-mode"><span>게임 모드</span><strong>일반 원카드</strong></div>
                     </div>
+                </section>
+                <section class="panel online-panel" id="online-panel" aria-labelledby="online-title">
+                    <h2 id="online-title">로비 접속자</h2>
+                    <ul class="online-users" id="online-users"><li><span class="online-dot" aria-hidden="true"></span><span id="online-name"></span><small>나</small></li></ul>
                 </section>
             </aside>
 
@@ -175,10 +359,32 @@
                     <section class="panel room-panel" aria-labelledby="room-list-title">
                         <div class="section-heading">
                             <h2 id="room-list-title">게임방 <span class="badge" id="room-count"></span></h2>
-                            <button class="button primary" id="open-create" type="button">+ 방 만들기</button>
+                            <div class="room-actions">
+                                <button class="button" id="open-create" type="button">+ 방 만들기</button>
+                                <button class="button primary" id="quick-join" type="button">빠른 입장</button>
+                                <button class="button" id="open-custom" type="button">커스텀 입장</button>
+                            </div>
                         </div>
-                        <div class="rooms" id="room-list"></div>
+                        <div class="room-board">
+                            <div class="room-slots" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+                            <div class="rooms" id="room-list"></div>
+                        </div>
+                        <nav class="room-pagination" aria-label="게임방 페이지">
+                            <button class="button" id="previous-page" type="button" aria-label="이전 페이지" disabled>‹</button>
+                            <output id="room-page" aria-live="polite">1 / 1</output>
+                            <button class="button" id="next-page" type="button" aria-label="다음 페이지" disabled>›</button>
+                        </nav>
                         <p class="error" id="room-error" role="alert" hidden></p>
+                    </section>
+                    <section class="panel chat-panel" aria-labelledby="lobby-chat-title">
+                        <header class="chat-heading"><h2 id="lobby-chat-title">로비 채팅</h2></header>
+                        <div class="chat-messages" id="lobby-messages" role="log" aria-live="polite" aria-relevant="additions"><p class="chat-empty">함께할 사람들에게 인사를 건네보세요.</p></div>
+                        <!-- todo: 채팅 송수신은 추가 UI 스크립트의 서버 연결 주석 참고 -->
+                        <form class="chat-form" data-messages="lobby-messages">
+                            <label hidden for="lobby-chat-input">로비 메시지</label>
+                            <input class="field" id="lobby-chat-input" name="message" maxlength="200" placeholder="메시지를 입력하세요" autocomplete="off" required>
+                            <button class="button primary" type="submit">전송</button>
+                        </form>
                     </section>
                 </section>
 
@@ -199,16 +405,71 @@
                         </div>
                         <div class="waiting-seats" id="waiting-seats"></div>
                     </section>
-                </section>
-                <!-- 게임 실행 화면 안에 내용 지우고 수정해도 됨) -->
-                <section data-screen="game" hidden aria-labelledby="game-title">
-                    <div class="screen-heading">
-                        <h1 id="game-title" tabindex="-1">LAST ONE · 게임 진행 중</h1>
+                    <div id="waiting-chat-slot">
+                        <section class="panel chat-panel" id="room-chat" aria-labelledby="room-chat-title" hidden>
+                            <header class="chat-heading"><h2 id="room-chat-title">방 채팅</h2></header>
+                            <div class="chat-messages" id="room-messages" role="log" aria-live="polite" aria-relevant="additions"><p class="chat-empty">함께할 사람들에게 인사를 건네보세요.</p></div>
+                            <form class="chat-form" data-messages="room-messages">
+                                <label hidden for="room-chat-input">방 메시지</label>
+                                <input class="field" id="room-chat-input" name="message" maxlength="200" placeholder="메시지를 입력하세요" autocomplete="off" required>
+                                <button class="button primary" type="submit">전송</button>
+                            </form>
+                        </section>
                     </div>
-                    <section class="panel" style="padding: 24px; text-align: center;">
-                        <h2>🎮 게임판이 준비 중입니다!</h2>
-                        <p class="muted" style="margin-top: 10px;" id="game-info-text"></p>
-                    </section>
+                </section>
+                <!-- 인게임: 기존 게임 시작 이벤트가 이 화면을 엶. -->
+                <section data-screen="game" hidden aria-labelledby="game-title">
+                    <div class="screen-heading game-heading">
+                        <h1 id="game-title" tabindex="-1">LAST ONE · 게임 진행 중</h1>
+                        <button class="button" id="game-leave" type="button">← 로비로</button>
+                    </div>
+                    <div class="game-layout">
+                        <div>
+                            <section class="game-table" aria-label="4인 원카드 테이블">
+                                <span class="table-watermark" aria-hidden="true">LAST ONE</span>
+                                <div class="table-seat seat-north">
+                                    <div class="seat-label"><strong class="seat-name" id="north-name"></strong><span class="seat-card-count" id="north-count">7장</span></div>
+                                    <div class="opponent-hand" id="north-cards" aria-hidden="true"></div>
+                                    
+                                </div>
+                                <div class="table-seat seat-west">
+                                    <div class="seat-label"><strong class="seat-name" id="west-name"></strong><span class="seat-card-count" id="west-count">7장</span></div>
+                                    <div class="opponent-hand" id="west-cards" aria-hidden="true"></div>
+                                    
+                                </div>
+                                <div class="table-seat seat-east">
+                                    <div class="seat-label"><strong class="seat-name" id="east-name"></strong><span class="seat-card-count" id="east-count">7장</span></div>
+                                    <div class="opponent-hand" id="east-cards" aria-hidden="true"></div>
+                                    
+                                </div>
+                                <div class="table-center">
+                                    <div class="pile">
+                                        <button class="draw-pile" id="draw-pile" type="button" aria-label="카드 더미에서 한 장 가져오기"><span aria-hidden="true">LAST<br>ONE</span></button>
+                                        <span class="pile-caption">가져올 패 · <span id="deck-count"></span></span>
+                                    </div>
+                                    <div class="pile">
+                                        <div class="discard-slot"><div class="discard-card" id="discard-card" role="img"></div></div>
+                                        <span class="pile-caption">버린 패 · <span id="discard-count"></span></span>
+                                    </div>
+                                </div>
+                                <div class="table-seat seat-south">
+                                    <div class="seat-label"><strong class="seat-name" id="south-name"></strong><span class="seat-card-count" id="south-count">7장</span></div>
+                                    <div class="opponent-hand" id="south-cards" aria-hidden="true"></div>
+                                    <div class="my-hand" id="my-hand" role="group" aria-label="내 손패"></div>
+                                </div>
+                            </section>
+                            <p class="game-rule">같은 무늬 또는 숫자의 카드를 낼 수 있어요. 더미를 누르면 한 장 가져와요.</p>
+                        </div>
+                        <div class="game-sidebar">
+                            <section class="panel game-room-info" aria-label="현재 게임방">
+                                <strong id="game-room-name"></strong>
+                                <p id="game-info-text"></p>
+                                <span class="game-spectators" id="game-spectators"></span>
+                            </section>
+                            <!-- 대기실의 방 채팅 DOM을 여기로 옮겨 대화를 그대로 유지. -->
+                            <div id="game-chat-slot"></div>
+                        </div>
+                    </div>
                 </section>
             </main>
         </div>
@@ -222,9 +483,30 @@
         <form id="create-form">
             <label class="field-label" for="create-name">방 이름</label>
             <input class="field" id="create-name" maxlength="40" placeholder="친구들과 즐거운 한 판" required>
+            <fieldset class="room-type">
+                <legend>방 공개 설정</legend>
+                <div class="room-type-options">
+                    <label><input type="radio" name="room-type" value="public" checked> 공개 방</label>
+                    <label><input type="radio" name="room-type" value="custom"> 커스텀 방</label>
+                </div>
+            </fieldset>
+            <!-- todo: 현재 서버는 공개 방만 지원. 커스텀 방은 미구현 상태이므로 버튼 비활성화 해놓은 상태-->
             <p class="dialog-hint">최대 40자 · 일반 원카드 · 최대 4명</p>
             <p class="error" id="create-error" role="alert"></p>
-            <button class="button primary dialog-submit" type="submit">방 만들고 입장하기</button>
+            <button class="button primary dialog-submit" id="create-submit" type="submit">방 만들고 입장하기</button>
+        </form>
+    </dialog>
+
+    <dialog id="custom-dialog" aria-labelledby="custom-title">
+        <div class="dialog-heading">
+            <h2 id="custom-title">커스텀 방 입장</h2>
+            <button class="close-button" id="close-custom" type="button" aria-label="닫기">×</button>
+        </div>
+        <form id="custom-form">
+            <label class="field-label" for="custom-code">초대 코드</label>
+            <input class="field" id="custom-code" name="code" maxlength="16" placeholder="초대 코드를 입력하세요" autocomplete="off" required>
+            <!-- todo: 서버에 초대 코드 입장 기능이 연결되면 이 버튼의 disabled를 해제할것. -->
+            <button class="button primary dialog-submit" type="submit" disabled>입장하기</button>
         </form>
     </dialog>
 
@@ -248,6 +530,8 @@
             currentRoom: null,
             rooms: [],
         };
+        // 플레이어 이름 전송
+        socket.emit('setUserName', me.name);
 
         // 접속하자마자 서버에 현재 방 목록 달라고 요청
         socket.emit('getRoomList');
@@ -264,6 +548,35 @@
             if (state.screen === 'lobby') {
                 renderRooms();
             }
+        });
+
+        // 서버로부터 전체 로비 접속자 목록 수신
+        socket.on('lobbyUsersUpdated', (users) => {
+            const userListContainer = $('online-users');
+            userListContainer.replaceChildren(); // 기존 목록 초기화
+
+            users.forEach(user => {
+                const isMe = user.socketId === socket.id;
+
+                const li = document.createElement('li');
+
+                const dot = document.createElement('span');
+                dot.className = 'online-dot';
+                dot.setAttribute('aria-hidden', 'true');
+
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = user.name;
+
+                li.append(dot, nameSpan);
+
+                if (isMe) {
+                    const small = document.createElement('small');
+                    small.textContent = '나';
+                    li.append(small);
+                }
+
+                userListContainer.append(li);
+            });
         });
 
         // 2. 현재 데이터를 화면에 표시.
@@ -400,8 +713,7 @@
         });
 
         // 서버로부터 게임 시작 신호를 받았을 때 게임판 화면으로 전환
-        // 게임판 전환까지는 구현, 게임판 구성 및 디자인은 고쳐야 함!
-        socket.on('gameStart', ({ players, hostId }) => {
+        socket.on('gameStart', ({ players, spectators, hostId }) => {
             showScreen('game'); // 게임 화면으로 전환
 
             const myPlayer = players.find(p => p.socketId === socket.id);
@@ -478,6 +790,259 @@
         // 초기 실행
         $('profile-name').textContent = me.name;
         showScreen('lobby', false);
+
+    </script>
+    <!-- 추가 UI: 기존 스크립트와 구분. 서버 미연결 사항은 이 스크립트의 todo 참고. -->
+    <script>
+        /* ===== 추가 UI 전용 코드 =====
+         * 위의 기존 함수/변수/Socket 송수신은 그대로 사용
+         * 기존 함수 재정의와 새로운 socket.on/emit은 하지 않음
+         * 기존 함수가 화면을 갱신하면 MutationObserver로 표시만 보완
+         */
+        (() => {
+            // 추가 UI 상태는 이 범위 안에만 둔다. 기존 state에는 필드를 추가하지 않음.
+            const ui = { page: 1, screen: '', roomId: null, game: null };
+            const roomChat = $('room-chat'); // 대기실과 인게임이 이 채팅 DOM 하나를 공유.
+            const gameScreen = document.querySelector('[data-screen="game"]');
+
+            // 1. 방 목록: 기존 renderRooms가 만든 방을 8개씩 표시.
+            function updateRoomPages() {
+                const cards = [...$('room-list').querySelectorAll('.room-card')];
+                const pages = Math.max(1, Math.ceil(cards.length / 8));
+                ui.page = Math.min(Math.max(1, ui.page), pages);
+                cards.forEach((card, index) => {
+                    card.hidden = index < (ui.page - 1) * 8 || index >= ui.page * 8;
+                });
+                $('room-page').textContent = `${ui.page} / ${pages}`;
+                $('previous-page').disabled = ui.page === 1;
+                $('next-page').disabled = ui.page === pages;
+            }
+            $('previous-page').addEventListener('click', () => { ui.page--; updateRoomPages(); });
+            $('next-page').addEventListener('click', () => { ui.page++; updateRoomPages(); });
+            new MutationObserver(updateRoomPages).observe($('room-list'), { childList: true });
+
+            // 빠른 입장은 새 Socket 요청 대신 기존 방 입장 버튼을 클릭.
+            $('quick-join').addEventListener('click', () => {
+                if (state.currentRoom) return;
+                const available = state.rooms.filter(room => !room.isFull && !room.isPlaying && room.playerCount < MAX_PLAYERS);
+                if (!available.length) {
+                    $('room-error').textContent = '지금 입장할 수 있는 공개 방이 없어요.';
+                    $('room-error').hidden = false;
+                    return;
+                }
+                const room = available[Math.floor(Math.random() * available.length)];
+                [...$('room-list').querySelectorAll('[data-room-id]')]
+                    .find(button => button.dataset.roomId === String(room.id))?.click();
+            });
+
+            // 2. 커스텀 방 UI
+            // todo(서버 연결): 현재 createRoom은 title/playerName만 받는다.
+            // 공개/비공개 구분, 목록에서 숨기기, 초대 코드 생성/검증을 서버와 먼저 합의要.
+            // 커스텀 선택을 무시한 채 공개 방을 생성하지 않도록 제출 비활성화 해놓음.
+            function updateRoomType() {
+                const custom = $('create-form').elements.namedItem('room-type').value === 'custom';
+                $('create-submit').disabled = custom;
+                $('create-submit').textContent = custom ? '커스텀 방 만들기' : '방 만들고 입장하기';
+            }
+            $('create-form').addEventListener('change', updateRoomType);
+            $('open-create').addEventListener('click', updateRoomType);
+            $('create-form').addEventListener('submit', event => {
+                if ($('create-form').elements.namedItem('room-type').value === 'custom') {
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                }
+            }, true);
+            $('open-custom').addEventListener('click', () => {
+                $('custom-form').reset();
+                $('custom-dialog').showModal();
+                $('custom-code').focus();
+            });
+            $('close-custom').addEventListener('click', () => $('custom-dialog').close());
+            // todo(서버 연결): 초대 코드로 입장하는 이벤트가 아직 없다.
+            // 공개 방 번호를 초대 코드로 간주하거나 기존 joinRoom의 의미를 바꾸지 않는다.
+            $('custom-form').addEventListener('submit', event => event.preventDefault());
+
+            // 3. 채팅 UI
+            // todo(서버 연결): 현재 메시지는 이 브라우저에만 표시된다.
+            // 서버의 로비/방별 채팅 송수신을 연결할 때 addChatMessage를 수신 처리에 사용한다.
+            // 방 채팅 DOM을 옮기므로 게임 시작 후에도 입력 내용과 대화가 유지된다.
+            function addChatMessage(messages, message) {
+                messages.querySelector('.chat-empty')?.remove();
+                const row = document.createElement('p');
+                row.className = 'chat-message';
+                const time = document.createElement('time');
+                time.dateTime = new Date().toISOString();
+                time.textContent = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+                const name = document.createElement('strong');
+                name.textContent = me.name;
+                row.append(time, name, document.createTextNode(message));
+                messages.append(row);
+                if (messages.children.length > 150) messages.firstElementChild.remove();
+                messages.scrollTop = messages.scrollHeight;
+            }
+            document.querySelectorAll('.chat-form').forEach(form => {
+                form.addEventListener('submit', event => {
+                    event.preventDefault();
+                    const input = form.elements.namedItem('message');
+                    const message = input.value.trim();
+                    if (!message) return;
+                    addChatMessage($(form.dataset.messages), message);
+                    input.value = '';
+                });
+            });
+
+            // todo(서버 연결): 전체 로비 접속자 목록을 보내는 이벤트가 아직 없다.
+            // 가상의 접속자는 넣지 않고 현재 브라우저의 사용자만 표시한다.
+            $('online-name').textContent = me.name;
+
+            // 4. 인게임 UI와 모션
+            // todo(서버 연결): 아래 패/더미/낼 수 있는지 판정은 브라우저 안의 동작 확인용임.
+            // 서버 게임 엔진과 연결되면 실제 손패/턴/덱/공격 카드 규칙을 사용해야 한다.
+            function prepareGame() {
+                const hand = [
+                    { suit: '♥', rank: '3' }, { suit: '♠', rank: '5' },
+                    { suit: '♣', rank: '9' }, { suit: '♦', rank: '2' },
+                    { suit: '♥', rank: 'K' }, { suit: '♣', rank: '5' }, { suit: '♦', rank: 'Q' }
+                ];
+                const discard = [{ suit: '♥', rank: '5' }];
+                const pack = [];
+                for (const suit of ['♠', '♥', '♦', '♣']) {
+                    for (const rank of ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']) {
+                        if (![...hand, ...discard].some(card => card.suit === suit && card.rank === rank)) pack.push({ suit, rank });
+                    }
+                }
+                for (let index = pack.length - 1; index > 0; index--) {
+                    const other = Math.floor(Math.random() * (index + 1));
+                    [pack[index], pack[other]] = [pack[other], pack[index]];
+                }
+                // 52장 중 나머지 세 사람의 7장씩을 제외한다. 자신을 제외한 상대의 패는 뒷면만 표시.
+                ui.game = { hand, discard, deck: pack.slice(21), busy: false };
+            }
+            function isPlayer() {
+                return Boolean(state.currentRoom?.players.some(player => player.socketId === socket.id));
+            }
+            function canPlay(card) {
+                const top = ui.game.discard.at(-1);
+                return card.suit === top.suit || card.rank === top.rank;
+            }
+            function cardFace(card) {
+                return `<span class="card-rank">${card.rank}</span><span class="card-suit" aria-hidden="true">${card.suit}</span><span class="card-rank-bottom" aria-hidden="true">${card.rank}</span>`;
+            }
+            function renderGameCards(arriving = false, played = false) {
+                const game = ui.game;
+                if (!game) return;
+                $('my-hand').replaceChildren();
+                game.hand.forEach((card, index) => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    const playable = canPlay(card);
+                    button.className = `hand-card${'♥♦'.includes(card.suit) ? ' card-red' : ''}${playable ? '' : ' is-blocked'}`;
+                    if (arriving && index === game.hand.length - 1) button.classList.add('card-arriving');
+                    button.disabled = !playable || game.busy || !isPlayer();
+                    button.setAttribute('aria-label', `${card.suit} ${card.rank}${playable ? ' 내기' : ' · 낼 수 없음'}`);
+                    button.innerHTML = cardFace(card);
+                    button.addEventListener('click', () => playCard(index, button));
+                    $('my-hand').append(button);
+                });
+                const top = game.discard.at(-1);
+                $('discard-card').className = `discard-card${'♥♦'.includes(top.suit) ? ' card-red' : ''}${played ? ' discard-arriving' : ''}`;
+                $('discard-card').innerHTML = cardFace(top);
+                $('discard-card').setAttribute('aria-label', `맨 위 카드 ${top.suit} ${top.rank}`);
+                $('deck-count').textContent = `${game.deck.length}장`;
+                $('discard-count').textContent = `${game.discard.length}장`;
+                $('draw-pile').disabled = !isPlayer() || game.busy || (!game.deck.length && game.discard.length < 2);
+                $('south-count').textContent = `${isPlayer() ? game.hand.length : 7}장`;
+                $('my-hand').hidden = !isPlayer();
+                $('south-cards').hidden = isPlayer();
+            }
+            function playCard(index, button) {
+                const game = ui.game;
+                if (!game || game.busy || !isPlayer() || !canPlay(game.hand[index])) return;
+                game.busy = true;
+                button.classList.add('card-leaving');
+                $('draw-pile').disabled = true;
+                // todo(서버 연결): 실제 게임에서는 내기 승인 후 이 모션과 손패 갱신을 실행한다.
+                setTimeout(() => {
+                    if (ui.game !== game || state.screen !== 'game') return;
+                    game.discard.push(game.hand.splice(index, 1)[0]);
+                    game.busy = false;
+                    renderGameCards(false, true);
+                }, 320);
+            }
+            $('draw-pile').addEventListener('click', () => {
+                const game = ui.game;
+                if (!game || game.busy || !isPlayer()) return;
+                if (!game.deck.length) game.deck = game.discard.splice(0, game.discard.length - 1).reverse();
+                if (!game.deck.length) return;
+                game.busy = true;
+                $('draw-pile').classList.add('pile-drawing');
+                $('draw-pile').disabled = true;
+                // todo(서버 연결): 실제 덱에서 받은 카드를 손패에 추가하도록 교체한다.
+                setTimeout(() => {
+                    if (ui.game !== game || state.screen !== 'game') return;
+                    game.hand.push(game.deck.pop());
+                    game.busy = false;
+                    $('draw-pile').classList.remove('pile-drawing');
+                    renderGameCards(true);
+                    $('my-hand').scrollLeft = $('my-hand').scrollWidth;
+                }, 200);
+            });
+            function renderGamePlayers() {
+                const room = state.currentRoom;
+                if (!room || !ui.game) return;
+                const mine = room.players.findIndex(player => player.socketId === socket.id);
+                const anchor = mine < 0 ? 0 : mine;
+                [['south', 0], ['east', 1], ['north', 2], ['west', 3]].forEach(([direction, offset]) => {
+                    const player = room.players[(anchor + offset) % 4];
+                    $(`${direction}-name`).textContent = player ? `${player.name}${player.socketId === socket.id ? ' · 나' : ''}` : '빈자리';
+                    $(`${direction}-count`).textContent = player ? '7장' : '0장';
+                    $(`${direction}-cards`).innerHTML = player ? '<span class="card-back-mini"></span>'.repeat(7) : '';
+                });
+                $('game-room-name').textContent = room.title;
+                $('game-spectators').textContent = `관전자 ${room.spectators.length} / ${MAX_CAPACITY - MAX_PLAYERS}`;
+                renderGameCards();
+            }
+            // 인게임에서 나가기 역시 기존 대기실의 나가기 동작을 재사용한다. 이 부분은 추가 UI 구현이 필요할지도;
+            $('game-leave').addEventListener('click', () => $('leave-room').click());
+
+            // 5. 기존 화면 전환과 참가자 갱신을 감지해 추가 UI만 맞춘다.
+            function syncInterface() {
+                const screen = state.screen;
+                document.body.dataset.uiScreen = screen;
+                $('online-panel').hidden = screen !== 'lobby';
+                if (screen === 'lobby') {
+                    roomChat.hidden = true;
+                    ui.roomId = null;
+                    ui.game = null;
+                    gameScreen.classList.remove('screen-slide-in');
+                } else {
+                    const room = state.currentRoom;
+                    if (!room) return;
+                    if (ui.roomId !== room.id) {
+                        $('room-messages').innerHTML = '<p class="chat-empty">함께할 사람들에게 인사를 건네보세요.</p>';
+                        $('room-chat-input').value = '';
+                        ui.roomId = room.id;
+                    }
+                    const slot = $(screen === 'game' ? 'game-chat-slot' : 'waiting-chat-slot');
+                    if (roomChat.parentElement !== slot) slot.append(roomChat);
+                    roomChat.hidden = false;
+                    if (screen === 'game') {
+                        if (!ui.game) prepareGame();
+                        renderGamePlayers();
+                        if (ui.screen !== 'game') {
+                            gameScreen.classList.add('screen-slide-in');
+                            $('game-title').focus({ preventScroll: true });
+                        }
+                    }
+                }
+                ui.screen = screen;
+            }
+            const screenObserver = new MutationObserver(syncInterface);
+            document.querySelectorAll('[data-screen]').forEach(section => screenObserver.observe(section, { attributes: true, attributeFilter: ['hidden'] }));
+            new MutationObserver(syncInterface).observe($('waiting-seats'), { childList: true });
+            updateRoomPages();
+            syncInterface();
+        })();
 
     </script>
 </body>
