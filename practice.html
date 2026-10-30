@@ -465,6 +465,7 @@
                                 <strong id="game-room-name"></strong>
                                 <p id="game-info-text"></p>
                                 <span class="game-spectators" id="game-spectators"></span>
+                                <button class="button primary" id="call-onecard" type="button" style="width: 100%; margin-top: 10px;">원카드!</button>
                             </section>
                             <!-- 대기실의 방 채팅 DOM을 여기로 옮겨 대화를 그대로 유지. -->
                             <div id="game-chat-slot"></div>
@@ -508,6 +509,19 @@
             <!-- todo: 서버에 초대 코드 입장 기능이 연결되면 이 버튼의 disabled를 해제할것. -->
             <button class="button primary dialog-submit" type="submit" disabled>입장하기</button>
         </form>
+    </dialog>
+
+    <dialog id="shape-dialog" aria-labelledby="shape-title">
+        <div class="dialog-heading">
+            <h2 id="shape-title">7 카드 · 변경할 문양 선택</h2>
+            <button class="close-button" id="close-shape" type="button" aria-label="닫기">×</button>
+        </div>
+        <div class="room-type-options" id="shape-options">
+            <button class="button" type="button" data-shape="spade">♠ 스페이드</button>
+            <button class="button" type="button" data-shape="heart" style="color: #c25e64;">♥ 하트</button>
+            <button class="button" type="button" data-shape="diamond" style="color: #c25e64;">♦ 다이아</button>
+            <button class="button" type="button" data-shape="clover">♣ 클로버</button>
+        </div>
     </dialog>
 
     <script src="/socket.io/socket.io.js"></script>
@@ -895,113 +909,237 @@
             // 가상의 접속자는 넣지 않고 현재 브라우저의 사용자만 표시한다.
             $('online-name').textContent = me.name;
 
-            // 4. 인게임 UI와 모션
-            // todo(서버 연결): 아래 패/더미/낼 수 있는지 판정은 브라우저 안의 동작 확인용임.
-            // 서버 게임 엔진과 연결되면 실제 손패/턴/덱/공격 카드 규칙을 사용해야 한다.
+            // 4. 인게임 UI와 모션 (back.js · server.js 소켓 연동)
+            const SUIT_MAP = { spade: '♠', heart: '♥', diamond: '♦', clover: '♣', joker: '🃏' };
+            const RANK_MAP = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K' };
+            const SHAPE_KO = { spade: '♠ 스페이드', heart: '♥ 하트', diamond: '♦ 다이아', clover: '♣ 클로버', joker: '🃏 조커' };
+
             function prepareGame() {
-                const hand = [
-                    { suit: '♥', rank: '3' }, { suit: '♠', rank: '5' },
-                    { suit: '♣', rank: '9' }, { suit: '♦', rank: '2' },
-                    { suit: '♥', rank: 'K' }, { suit: '♣', rank: '5' }, { suit: '♦', rank: 'Q' }
-                ];
-                const discard = [{ suit: '♥', rank: '5' }];
-                const pack = [];
-                for (const suit of ['♠', '♥', '♦', '♣']) {
-                    for (const rank of ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']) {
-                        if (![...hand, ...discard].some(card => card.suit === suit && card.rank === rank)) pack.push({ suit, rank });
-                    }
+                if (!ui.game) {
+                    ui.game = { hand: [], publicState: null, busy: false, pendingSevenIndex: null };
                 }
-                for (let index = pack.length - 1; index > 0; index--) {
-                    const other = Math.floor(Math.random() * (index + 1));
-                    [pack[index], pack[other]] = [pack[other], pack[index]];
+                return ui.game;
+            }
+            function toDisplayCard(card) {
+                if (!card) return { suit: '', rank: '', isRed: false };
+                if (card.suit && card.rank) {
+                    return { suit: card.suit, rank: card.rank, isRed: '♥♦'.includes(card.suit) };
                 }
-                // 52장 중 나머지 세 사람의 7장씩을 제외한다. 자신을 제외한 상대의 패는 뒷면만 표시.
-                ui.game = { hand, discard, deck: pack.slice(21), busy: false };
+                if (card.type === 'joker' || card.shape === 'joker') {
+                    const isColor = card.jokerType === 'color';
+                    return { suit: '🃏', rank: isColor ? 'C' : 'B', isRed: isColor };
+                }
+                const suit = SUIT_MAP[card.shape] || card.shape || '';
+                const rank = RANK_MAP[card.number] || String(card.number);
+                const isRed = card.shape === 'heart' || card.shape === 'diamond';
+                return { suit, rank, isRed };
             }
             function isPlayer() {
-                return Boolean(state.currentRoom?.players.some(player => player.socketId === socket.id));
+                const pub = ui.game?.publicState;
+                if (pub) {
+                    const mePlayer = pub.players.find(player => player.socketId === socket.id);
+                    return Boolean(mePlayer && !mePlayer.isEliminated);
+                }
+                return Boolean(state.currentRoom?.players.some(player => player && player.socketId === socket.id));
+            }
+            function isMyTurn() {
+                const pub = ui.game?.publicState;
+                return Boolean(pub && pub.currentTurnSocketId === socket.id && isPlayer());
             }
             function canPlay(card) {
-                const top = ui.game.discard.at(-1);
-                return card.suit === top.suit || card.rank === top.rank;
+                const pub = ui.game?.publicState;
+                if (!pub || !card || !isMyTurn()) return false;
+                const topCard = pub.topCard;
+                if (!topCard) return true;
+
+                if (pub.attackStack > 0) {
+                    if (topCard.number === 2) {
+                        return card.number === 3 || card.number === 2 || card.number === 1 || card.type === 'joker';
+                    } else if (topCard.number === 1) {
+                        return card.number === 1 || card.type === 'joker';
+                    } else if (topCard.type === 'joker') {
+                        return topCard.jokerType === 'black' && card.type === 'joker' && card.jokerType === 'color';
+                    }
+                    return false;
+                }
+
+                if (card.type === 'joker' || topCard.type === 'joker' || pub.currentShape === 'joker') return true;
+                return card.number === topCard.number || card.shape === pub.currentShape;
             }
             function cardFace(card) {
-                return `<span class="card-rank">${card.rank}</span><span class="card-suit" aria-hidden="true">${card.suit}</span><span class="card-rank-bottom" aria-hidden="true">${card.rank}</span>`;
+                const d = toDisplayCard(card);
+                return `<span class="card-rank">${d.rank}</span><span class="card-suit" aria-hidden="true">${d.suit}</span><span class="card-rank-bottom" aria-hidden="true">${d.rank}</span>`;
             }
             function renderGameCards(arriving = false, played = false) {
                 const game = ui.game;
                 if (!game) return;
+                const pub = game.publicState;
                 $('my-hand').replaceChildren();
                 game.hand.forEach((card, index) => {
+                    const d = toDisplayCard(card);
                     const button = document.createElement('button');
                     button.type = 'button';
                     const playable = canPlay(card);
-                    button.className = `hand-card${'♥♦'.includes(card.suit) ? ' card-red' : ''}${playable ? '' : ' is-blocked'}`;
+                    button.className = `hand-card${d.isRed ? ' card-red' : ''}${playable ? '' : ' is-blocked'}`;
                     if (arriving && index === game.hand.length - 1) button.classList.add('card-arriving');
                     button.disabled = !playable || game.busy || !isPlayer();
-                    button.setAttribute('aria-label', `${card.suit} ${card.rank}${playable ? ' 내기' : ' · 낼 수 없음'}`);
+                    button.setAttribute('aria-label', `${d.suit} ${d.rank}${playable ? ' 내기' : ' · 낼 수 없음'}`);
                     button.innerHTML = cardFace(card);
                     button.addEventListener('click', () => playCard(index, button));
                     $('my-hand').append(button);
                 });
-                const top = game.discard.at(-1);
-                $('discard-card').className = `discard-card${'♥♦'.includes(top.suit) ? ' card-red' : ''}${played ? ' discard-arriving' : ''}`;
-                $('discard-card').innerHTML = cardFace(top);
-                $('discard-card').setAttribute('aria-label', `맨 위 카드 ${top.suit} ${top.rank}`);
-                $('deck-count').textContent = `${game.deck.length}장`;
-                $('discard-count').textContent = `${game.discard.length}장`;
-                $('draw-pile').disabled = !isPlayer() || game.busy || (!game.deck.length && game.discard.length < 2);
-                $('south-count').textContent = `${isPlayer() ? game.hand.length : 7}장`;
+                const top = pub?.topCard;
+                if (top) {
+                    const topDisp = toDisplayCard(top);
+                    $('discard-card').className = `discard-card${topDisp.isRed ? ' card-red' : ''}${played ? ' discard-arriving' : ''}`;
+                    $('discard-card').innerHTML = cardFace(top);
+                    $('discard-card').setAttribute('aria-label', `맨 위 카드 ${topDisp.suit} ${topDisp.rank}`);
+                }
+                const totalHands = pub ? pub.players.reduce((sum, p) => sum + (p.cardCount || 0), 0) : 0;
+                const discardCount = pub ? (pub.discardCount ?? Math.max(1, 54 - pub.deckCount - totalHands)) : 0;
+                $('deck-count').textContent = `${pub ? pub.deckCount : 0}장`;
+                $('discard-count').textContent = `${discardCount}장`;
+                $('draw-pile').disabled = !isMyTurn() || game.busy;
+                const meInPub = pub?.players.find(p => p.socketId === socket.id);
+                $('south-count').textContent = `${meInPub ? meInPub.cardCount : game.hand.length}장`;
                 $('my-hand').hidden = !isPlayer();
                 $('south-cards').hidden = isPlayer();
+                $('call-onecard').disabled = !isPlayer();
+            }
+            function submitCardToServer(index, newShape = null, button = null) {
+                const game = ui.game;
+                if (!game) return;
+                game.busy = true;
+                if (button) button.classList.add('card-leaving');
+                $('draw-pile').disabled = true;
+                socket.emit('playCard', { cardIndex: index, newShape });
+                setTimeout(() => {
+                    if (ui.game === game && game.busy) {
+                        game.busy = false;
+                        renderGameCards();
+                    }
+                }, 600);
             }
             function playCard(index, button) {
                 const game = ui.game;
-                if (!game || game.busy || !isPlayer() || !canPlay(game.hand[index])) return;
-                game.busy = true;
-                button.classList.add('card-leaving');
-                $('draw-pile').disabled = true;
-                // todo(서버 연결): 실제 게임에서는 내기 승인 후 이 모션과 손패 갱신을 실행한다.
-                setTimeout(() => {
-                    if (ui.game !== game || state.screen !== 'game') return;
-                    game.discard.push(game.hand.splice(index, 1)[0]);
-                    game.busy = false;
-                    renderGameCards(false, true);
-                }, 320);
+                const card = game?.hand[index];
+                if (!game || game.busy || !isPlayer() || !canPlay(card)) return;
+                if (Number(card.number) === 7) {
+                    game.pendingSevenIndex = index;
+                    $('shape-dialog').showModal();
+                    return;
+                }
+                submitCardToServer(index, null, button);
             }
+            $('close-shape').addEventListener('click', () => {
+                if (ui.game) ui.game.pendingSevenIndex = null;
+                $('shape-dialog').close();
+            });
+            $('shape-options').addEventListener('click', event => {
+                const btn = event.target.closest('[data-shape]');
+                if (!btn || !ui.game || ui.game.pendingSevenIndex === null) return;
+                const idx = ui.game.pendingSevenIndex;
+                ui.game.pendingSevenIndex = null;
+                $('shape-dialog').close();
+                submitCardToServer(idx, btn.dataset.shape);
+            });
             $('draw-pile').addEventListener('click', () => {
                 const game = ui.game;
-                if (!game || game.busy || !isPlayer()) return;
-                if (!game.deck.length) game.deck = game.discard.splice(0, game.discard.length - 1).reverse();
-                if (!game.deck.length) return;
+                if (!game || game.busy || !isMyTurn()) return;
                 game.busy = true;
                 $('draw-pile').classList.add('pile-drawing');
                 $('draw-pile').disabled = true;
-                // todo(서버 연결): 실제 덱에서 받은 카드를 손패에 추가하도록 교체한다.
+                socket.emit('drawCard');
                 setTimeout(() => {
-                    if (ui.game !== game || state.screen !== 'game') return;
-                    game.hand.push(game.deck.pop());
-                    game.busy = false;
                     $('draw-pile').classList.remove('pile-drawing');
-                    renderGameCards(true);
-                    $('my-hand').scrollLeft = $('my-hand').scrollWidth;
-                }, 200);
+                    if (ui.game === game && game.busy) {
+                        game.busy = false;
+                        renderGameCards();
+                    }
+                }, 400);
             });
-            function renderGamePlayers() {
+            $('call-onecard').addEventListener('click', () => {
+                if (!ui.game || !isPlayer()) return;
+                socket.emit('callOneCard');
+            });
+            function renderGamePlayers(played = false) {
                 const room = state.currentRoom;
                 if (!room || !ui.game) return;
-                const mine = room.players.findIndex(player => player.socketId === socket.id);
+                const pub = ui.game.publicState;
+                const sourcePlayers = pub ? pub.players : room.players;
+                const mine = sourcePlayers.findIndex(player => player && player.socketId === socket.id);
                 const anchor = mine < 0 ? 0 : mine;
                 [['south', 0], ['east', 1], ['north', 2], ['west', 3]].forEach(([direction, offset]) => {
-                    const player = room.players[(anchor + offset) % 4];
-                    $(`${direction}-name`).textContent = player ? `${player.name}${player.socketId === socket.id ? ' · 나' : ''}` : '빈자리';
-                    $(`${direction}-count`).textContent = player ? '7장' : '0장';
-                    $(`${direction}-cards`).innerHTML = player ? '<span class="card-back-mini"></span>'.repeat(7) : '';
+                    const player = sourcePlayers[(anchor + offset) % 4];
+                    if (!player) {
+                        $(`${direction}-name`).textContent = '빈자리';
+                        $(`${direction}-count`).textContent = '0장';
+                        $(`${direction}-cards`).innerHTML = '';
+                        return;
+                    }
+                    const isTurn = pub && pub.currentTurnSocketId === player.socketId && !player.isEliminated;
+                    const tags = [
+                        player.socketId === socket.id ? ' · 나' : '',
+                        isTurn ? ' · [현재 턴]' : '',
+                        player.onecardCalled ? ' · [원카드!]' : '',
+                        player.isEliminated ? ' · (탈락)' : ''
+                    ].join('');
+                    const count = typeof player.cardCount === 'number' ? player.cardCount : 7;
+                    $(`${direction}-name`).textContent = `${player.name}${tags}`;
+                    $(`${direction}-count`).textContent = player.isEliminated ? '탈락' : `${count}장`;
+                    $(`${direction}-cards`).innerHTML = player.isEliminated ? '' : '<span class="card-back-mini"></span>'.repeat(Math.min(count, 15));
                 });
                 $('game-room-name').textContent = room.title;
                 $('game-spectators').textContent = `관전자 ${room.spectators.length} / ${MAX_CAPACITY - MAX_PLAYERS}`;
-                renderGameCards();
+                if (pub) {
+                    const turnPlayer = pub.players.find(p => p.socketId === pub.currentTurnSocketId);
+                    const shapeText = SHAPE_KO[pub.currentShape] || pub.currentShape || '-';
+                    const attackText = pub.attackStack > 0 ? ` · 🔥 공격 +${pub.attackStack}장` : '';
+                    const dirText = pub.undirection ? '반시계 방향' : '시계 방향';
+                    $('game-info-text').textContent = `현재 턴: ${turnPlayer ? turnPlayer.name : '-'} | 문양: ${shapeText} | ${dirText}${attackText}`;
+                }
+                renderGameCards(false, played);
             }
+            socket.on('gameStateUpdate', (publicState) => {
+                const game = prepareGame();
+                const prevTop = game.publicState?.topCard;
+                const played = Boolean(prevTop && publicState.topCard && (prevTop.shape !== publicState.topCard.shape || prevTop.number !== publicState.topCard.number || prevTop.jokerType !== publicState.topCard.jokerType));
+                game.publicState = publicState;
+                game.busy = false;
+                $('draw-pile').classList.remove('pile-drawing');
+                if (state.screen === 'game') {
+                    renderGamePlayers(played);
+                }
+            });
+            socket.on('myHandUpdate', (hand) => {
+                const game = prepareGame();
+                const arriving = Array.isArray(hand) && hand.length > game.hand.length;
+                game.hand = Array.isArray(hand) ? hand : [];
+                game.busy = false;
+                if (state.screen === 'game') {
+                    renderGameCards(arriving, false);
+                    if (arriving) {
+                        $('my-hand').scrollLeft = $('my-hand').scrollWidth;
+                    }
+                }
+            });
+            socket.on('oneCardResult', (result) => {
+                if (!result) return;
+                if (result.type === 'defend') {
+                    $('game-info-text').textContent = `📢 ${result.callerId} 플레이어가 원카드를 선언했습니다!`;
+                } else if (result.type === 'penalty') {
+                    $('game-info-text').textContent = `⚡ ${result.callerId}의 원카드 저지! (${(result.penalized || []).join(', ')} 벌칙 +1장)`;
+                }
+            });
+            socket.on('gameOver', ({ winner, winnerName, reason } = {}) => {
+                if ($('shape-dialog').open) $('shape-dialog').close();
+                const reasonText = reason === 'clear' ? '모든 카드를 내려놓아' : (reason === 'last' ? '최후의 1인으로 살아남아' : '게임이 종료되어');
+                const displayWinner = winnerName || winner || '플레이어';
+                alert(`🎉 게임 종료! ${displayWinner}님이 ${reasonText} 승리했습니다!`);
+                ui.game = null;
+                renderWaiting();
+                showScreen('waiting');
+            });
             // 인게임에서 나가기 역시 기존 대기실의 나가기 동작을 재사용한다. 이 부분은 추가 UI 구현이 필요할지도;
             $('game-leave').addEventListener('click', () => $('leave-room').click());
 
@@ -1027,12 +1165,14 @@
                     if (roomChat.parentElement !== slot) slot.append(roomChat);
                     roomChat.hidden = false;
                     if (screen === 'game') {
-                        if (!ui.game) prepareGame();
+                        prepareGame();
                         renderGamePlayers();
                         if (ui.screen !== 'game') {
                             gameScreen.classList.add('screen-slide-in');
                             $('game-title').focus({ preventScroll: true });
                         }
+                    } else if (screen === 'waiting') {
+                        ui.game = null;
                     }
                 }
                 ui.screen = screen;

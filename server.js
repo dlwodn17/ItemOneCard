@@ -8,6 +8,54 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {cors:{origin: "*",methods: ["GET", "POST"]}});
 
+const OneCardGame = require('./back.js');
+
+// 방 상태 브로드캐스트 헬퍼 함수
+function broadcastGameState(roomId) {
+  const room = rooms[roomId];
+  if (!room || !room.game) return;
+
+  const publicState = room.game.getPublicState();
+
+  // 모든 인원에게 기본 상태 전달
+  io.to(roomId).emit('gameStateUpdate', publicState);
+
+  // 본인 손패(카드 목록)는 해당 소켓에게만 비공개 개별 전송
+  room.game.playerzone.forEach(p => {
+    io.to(p.socketId).emit('myHandUpdate', p.hand);
+  });
+}
+
+// 게임 종료 처리 공통 헬퍼 함수
+function handleGameEnd(roomId, overResult) {
+  const room = rooms[roomId];
+  if (!room) return;
+
+  const winnerPlayer = room.game ? room.game.playerzone.find(p => p.id === overResult.winner) : null;
+  io.to(roomId).emit('gameOver', {
+    ...overResult,
+    winnerName: winnerPlayer ? winnerPlayer.name : overResult.winner
+  });
+
+  room.isPlaying = false;
+  room.game = null;
+
+  // 게임 도중 퇴장(null)한 자리 정리 및 관전자 승격
+  room.players = room.players.filter(Boolean);
+  while (room.spectators.length > 0 && room.players.length < MAX_PLAYERS) {
+    room.players.push(room.spectators.shift());
+  }
+
+  room.players.forEach((p, i) => { p.id = `P${i + 1}`; });
+  room.spectators.forEach((s, i) => { s.id = `관전자${i + 1}`; });
+
+  io.to(roomId).emit('roomStateUpdated', {
+    players: room.players,
+    spectators: room.spectators,
+    hostId: room.hostId
+  });
+  io.emit('roomListUpdated', getPublicRoomInfo());
+}
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'practice.html'));
@@ -75,7 +123,7 @@ io.on('connection',(socket) => {
     socket.on('joinRoom',({roomId,playerName})=>{
         const room =rooms[roomId];
         if(!room){
-            return socket.emit('errorMg', '존재하지 않는 방이에요');
+            return socket.emit('errorMsg', '존재하지 않는 방이에요');
         }
 
         if (room.isPlaying) {
@@ -84,7 +132,7 @@ io.on('connection',(socket) => {
 
         const total = room.players.length + room.spectators.length;
         if(total >= MAX_CAPACITY){
-            return socket.emit('errorMg','방이 가득 찼어요');
+            return socket.emit('errorMsg','방이 가득 찼어요');
         }
 
         let myRole ='';
@@ -128,7 +176,7 @@ io.on('connection',(socket) => {
         
         const room = rooms[roomId];
         if(room.hostId !== socket.id){
-             return socket.emit('errorMg','방장만 게임 시작할 수 있어요');
+             return socket.emit('errorMsg','방장만 게임 시작할 수 있어요');
         }
 
         if(room.players.length < MAX_PLAYERS){
@@ -136,6 +184,7 @@ io.on('connection',(socket) => {
         }
 
         room.isPlaying = true;
+        room.game = new OneCardGame(room.players);
 
         //게임 시작시 전달 정보
         io.to(roomId).emit('gameStart', {
@@ -144,9 +193,63 @@ io.on('connection',(socket) => {
             hostId: room.hostId
         });
 
+        broadcastGameState(roomId);
         io.emit('roomListUpdated', getPublicRoomInfo());
 
     });
+
+    // 인게임: 카드 제출 처리
+    socket.on('playCard', ({ cardIndex, newShape } = {}) => {
+        const roomId = socket.currentRoomId;
+        const room = roomId && rooms[roomId];
+        if (!room || !room.isPlaying || !room.game) return;
+
+        const result = room.game.playCard(socket.id, cardIndex, newShape);
+        if (!result.success) {
+            return socket.emit('errorMsg', result.msg);
+        }
+
+        broadcastGameState(roomId);
+        if (result.overResult && result.overResult.isOver) {
+            handleGameEnd(roomId, result.overResult);
+        }
+    });
+
+    // 인게임: 카드 뽑기 처리
+    socket.on('drawCard', () => {
+        const roomId = socket.currentRoomId;
+        const room = roomId && rooms[roomId];
+        if (!room || !room.isPlaying || !room.game) return;
+
+        const result = room.game.drawCard(socket.id);
+        if (!result.success) {
+            return socket.emit('errorMsg', result.msg);
+        }
+
+        broadcastGameState(roomId);
+        if (result.overResult && result.overResult.isOver) {
+            handleGameEnd(roomId, result.overResult);
+        }
+    });
+
+    // 인게임: 원카드 외치기 처리
+    socket.on('callOneCard', () => {
+        const roomId = socket.currentRoomId;
+        const room = roomId && rooms[roomId];
+        if (!room || !room.isPlaying || !room.game) return;
+
+        const result = room.game.callOneCard(socket.id);
+        if (!result.success) {
+            return socket.emit('errorMsg', result.msg);
+        }
+
+        io.to(roomId).emit('oneCardResult', result);
+        broadcastGameState(roomId);
+        if (result.overResult && result.overResult.isOver) {
+            handleGameEnd(roomId, result.overResult);
+        }
+    });
+    
 });
 
 // 2. 방 목록 정보 추출 함수 (로비 화면용)
@@ -155,13 +258,14 @@ function getPublicRoomInfo() {
     const list = [];
     for (const id in rooms) {
         const r = rooms[id];
-        const host = r.players.find(p => p.socketId === r.hostId)|| r.spectators.find(s => s.socketId === r.hostId);
-        const totalMembers = r.players.length + r.spectators.length;
+        const validPlayers = r.players.filter(Boolean);
+        const host = validPlayers.find(p => p.socketId === r.hostId)|| r.spectators.find(s => s.socketId === r.hostId);
+        const totalMembers = validPlayers.length + r.spectators.length;
         list.push({
             id: r.id,
             title: r.title,
             hostName: host ? host.name : '방장',
-            playerCount: r.players.length,
+            playerCount: validPlayers.length,
             specCount: r.spectators.length,
             memberCount: totalMembers,
             isFull: totalMembers >= MAX_CAPACITY,
@@ -189,11 +293,15 @@ function processUserExit(socket){
         const wasHost = (target.hostId === socket.id);
 
         // 플레이어 퇴장처리
-        const playerId = target.players.findIndex(p => p.socketId === socket.id);
+        const playerId = target.players.findIndex(p => p && p.socketId === socket.id);
+        let leaveResult = null;
         if(playerId != -1){
             if(target.isPlaying){
                 //아직 게임 종료 함수 안만들어져서 null로 플레이어 안 꼬이게 설정
-                target.players[playerIndex] = null;
+                target.players[playerId] = null;
+                if (target.game) {
+                    leaveResult = target.game.handlePlayerLeave(socket.id);
+                }
             }else{
                 target.players.splice(playerId,1);
 
@@ -210,33 +318,46 @@ function processUserExit(socket){
             }
         }
 
-        target.players.forEach(((p,i) => {p.id = `P${i + 1}`;}));
+        target.players.forEach((p, i) => { if (p) p.id = `P${i + 1}`; });
         target.spectators.forEach((s, i) => { s.id = `관전자${i + 1}`; });
        
 
         // 방에 아무도 없으면 방삭제 아니면 플레이어 상태 동기화
-        const ativePlayersCount = target.players.filter(Boolean).length;
-        const totalRemain =target.players.length + target.spectators.length;
+        const activePlayersCount = target.players.filter(Boolean).length;
+        const totalRemain = activePlayersCount + target.spectators.length;
         
         if (totalRemain === 0) {
             delete rooms[currentRoomId];
             console.log(`방 삭제됨: ${currentRoomId}`);
         } else {
-            const hostStillExists = [...target.players.filter[Boolean], ...target.spectators].some(m => m.socketId === target.hostId);
+            const validPlayers = target.players.filter(Boolean);
+            const hostStillExists = [...validPlayers, ...target.spectators].some(m => m.socketId === target.hostId);
             if (wasHost || !hostStillExists) {
-                const vaildPlayers = target.players.filter(Boolean);
-                if (target.players.length > 0) {
-                    target.hostId = vaildPlayers[0].socketId; // 남은 플레이어 중 첫 번째 사람에게 위임
+                if (validPlayers.length > 0) {
+                    target.hostId = validPlayers[0].socketId; // 남은 플레이어 중 첫 번째 사람에게 위임
                 } else if (target.spectators.length > 0) {
                     target.hostId = target.spectators[0].socketId; // 플레이어가 없으면 관전자 중 첫 번째 사람에게 위임
                 }
             }
-            
-            io.to(currentRoomId).emit('roomStateUpdated', {
-                players: target.players,
-                spectators: target.spectators,
-                hostId: target.hostId
-            });
+
+            if (target.isPlaying && target.game) {
+                if (leaveResult && leaveResult.overResult && leaveResult.overResult.isOver) {
+                    handleGameEnd(currentRoomId, leaveResult.overResult);
+                } else {
+                    broadcastGameState(currentRoomId);
+                    io.to(currentRoomId).emit('roomStateUpdated', {
+                        players: target.players.filter(Boolean),
+                        spectators: target.spectators,
+                        hostId: target.hostId
+                    });
+                }
+            } else {
+                io.to(currentRoomId).emit('roomStateUpdated', {
+                    players: target.players.filter(Boolean),
+                    spectators: target.spectators,
+                    hostId: target.hostId
+                });
+            }
         }
 
         io.emit('roomListUpdated', getPublicRoomInfo());
