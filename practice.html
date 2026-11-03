@@ -619,8 +619,13 @@
         const escapeHTML = value => String(value).replace(/[&<>"']/g, character => ({
             '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
         }[character]));
-        // 소켓 서버연결 
-        const socket = io('http://localhost:3000');
+
+        // 소켓 서버 연결 (배포 환경과 로컬 환경 자동 분기)
+
+        const socket = io(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+            ? 'http://localhost:3000' 
+            : window.location.origin // Render에 배포된 실제 도메인 주소를 자동으로 사용합니다!
+        );
         const MAX_PLAYERS = 4;
         const MAX_CAPACITY = 6;
         const me = { id: 'user_' + Math.random().toString(36).substr(2, 9), name: '플레이어_' + Math.floor(Math.random() * 100)};
