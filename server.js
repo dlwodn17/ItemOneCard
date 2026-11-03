@@ -249,6 +249,48 @@ io.on('connection',(socket) => {
             handleGameEnd(roomId, result.overResult);
         }
     });
+
+    // 기능 추가 1. 채팅 메시지 처리 (로비 또는 게임방 안)
+    socket.on('chatMessage', ({ message, target }) => {
+        // target: 'lobby' 또는 'room'
+        // 유저 이름 찾기 (로비 유저 또는 방 안의 플레이어/관전자 중에서 탐색)
+        let senderName = '플레이어';
+        const lobbyUser = lobbyUsers.find(u => u.socketId === socket.id);
+        if (lobbyUser) {
+            senderName = lobbyUser.name;
+        } else if (socket.currentRoomId && rooms[socket.currentRoomId]) {
+            const room = rooms[socket.currentRoomId];
+            const member = [...room.players.filter(Boolean), ...room.spectators].find(m => m.socketId === socket.id);
+            if (member) senderName = member.name;
+        }
+
+        const chatData = {
+            socketId: socket.id,
+            name: senderName,
+            message,
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+
+        if (target === 'lobby' || !socket.currentRoomId) {
+            // 로비 전체에 브로드캐스트
+            io.emit('receiveChat', { ...chatData, scope: 'lobby' });
+        } else if (target === 'room' && socket.currentRoomId) {
+            // 현재 유저가 속한 방(Room)에만 브로드캐스트
+            io.to(socket.currentRoomId).emit('receiveChat', { ...chatData, scope: 'room' });
+        }
+    });
+
+    // 기능 추가 2. 이모티콘 / 말풍선 전송 처리
+
+    socket.on('sendEmoticon', ({ emoticonId }) => {
+        const roomId = socket.currentRoomId;
+        if (!roomId || !rooms[roomId]) return;
+
+        io.to(roomId).emit('receiveEmoticon', {
+            socketId: socket.id,
+            emoticonId
+        });
+    });
     
 });
 

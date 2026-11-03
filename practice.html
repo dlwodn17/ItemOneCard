@@ -316,7 +316,74 @@
             .screen-slide-in, .card-arriving, .card-leaving, .discard-arriving, .pile-drawing { animation: none; }
             .hand-card, .draw-pile { transition: none; }
         }
+        
+        /* ================= 이모티콘 & 말풍선 스타일 ================= */
+        .table-seat {
+            position: relative; /* 말풍선 위치 기준 */
+        }
 
+        /* 플레이어 말풍선 (이모티콘 표시용) */
+        .emoticon-bubble {
+            position: absolute;
+            top: -45px;
+            left: 50%;
+            transform: translateX(-50%) scale(0.5);
+            background: #ffffff;
+            border: 2px solid var(--blue);
+            border-radius: 16px;
+            padding: 4px 12px;
+            font-size: 26px;
+            line-height: 1;
+            opacity: 0;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(32, 59, 87, 0.2);
+            transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 100;
+        }
+
+        .emoticon-bubble::after {
+            content: '';
+            position: absolute;
+            bottom: -7px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 7px 6px 0;
+            border-style: solid;
+            border-color: var(--blue) transparent transparent;
+        }
+
+        .emoticon-bubble.show {
+            opacity: 1;
+            transform: translateX(-50%) scale(1);
+        }
+
+        /* 내 손패 영역(seat-south) 근처 이모티콘 선택 패널 */
+        .emoticon-picker {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 8px;
+            padding: 6px 12px;
+            background: rgba(255, 255, 255, 0.85);
+            border-radius: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .emoticon-btn {
+            border: none;
+            background: none;
+            font-size: 22px;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 8px;
+            transition: transform 0.15s ease;
+        }
+
+        .emoticon-btn:hover {
+            transform: scale(1.3);
+            background: var(--sky);
+        }
+                
     </style>
 </head>
 <body>
@@ -428,16 +495,19 @@
                             <section class="game-table" aria-label="4인 원카드 테이블">
                                 <span class="table-watermark" aria-hidden="true">LAST ONE</span>
                                 <div class="table-seat seat-north">
+                                    <div class="emoticon-bubble"></div>
                                     <div class="seat-label"><strong class="seat-name" id="north-name"></strong><span class="seat-card-count" id="north-count">7장</span></div>
                                     <div class="opponent-hand" id="north-cards" aria-hidden="true"></div>
                                     
                                 </div>
                                 <div class="table-seat seat-west">
+                                    <div class="emoticon-bubble"></div>
                                     <div class="seat-label"><strong class="seat-name" id="west-name"></strong><span class="seat-card-count" id="west-count">7장</span></div>
                                     <div class="opponent-hand" id="west-cards" aria-hidden="true"></div>
                                     
                                 </div>
                                 <div class="table-seat seat-east">
+                                    <div class="emoticon-bubble"></div>
                                     <div class="seat-label"><strong class="seat-name" id="east-name"></strong><span class="seat-card-count" id="east-count">7장</span></div>
                                     <div class="opponent-hand" id="east-cards" aria-hidden="true"></div>
                                     
@@ -453,9 +523,24 @@
                                     </div>
                                 </div>
                                 <div class="table-seat seat-south">
-                                    <div class="seat-label"><strong class="seat-name" id="south-name"></strong><span class="seat-card-count" id="south-count">7장</span></div>
+                                    <div class="emoticon-bubble"></div>
+
+                                    <div class="seat-label">
+                                        <strong class="seat-name" id="south-name"></strong>
+                                        <span class="seat-card-count" id="south-count">7장</span>
+                                    </div>
                                     <div class="opponent-hand" id="south-cards" aria-hidden="true"></div>
                                     <div class="my-hand" id="my-hand" role="group" aria-label="내 손패"></div>
+
+                                    <!-- 본인이 이모티콘을 보낼 수 있는 선택 패널 -->
+                                    <div class="emoticon-picker">
+                                        <button type="button" class="emoticon-btn" onclick="sendEmoticon('😊')">😊</button>
+                                        <button type="button" class="emoticon-btn" onclick="sendEmoticon('🔥')">🔥</button>
+                                        <button type="button" class="emoticon-btn" onclick="sendEmoticon('👏')">👏</button>
+                                        <button type="button" class="emoticon-btn" onclick="sendEmoticon('😢')">😢</button>
+                                        <button type="button" class="emoticon-btn" onclick="sendEmoticon('❤️')">❤️</button>
+                                        <button type="button" class="emoticon-btn" onclick="sendEmoticon('💣')">💣</button>
+                                    </div>
                                 </div>
                             </section>
                             <p class="game-rule">같은 무늬 또는 숫자의 카드를 낼 수 있어요. 더미를 누르면 한 장 가져와요.</p>
@@ -1184,6 +1269,172 @@
             syncInterface();
         })();
 
+    // 1. 엔터 키: 로비 및 방 채팅 입력창 모두 지원 (방 이름 입력창은 보호)
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const input = e.target;
+            if (!input || input.tagName !== 'INPUT') return;
+
+            //  방 이름 입력창은 채팅으로 오인하지 않도록 예외 처리
+            if (input.id === 'room-name-input') return;
+
+            //  로비 채팅창, 방 안 채팅창, 또는 chat-input 클래스를 가진 입력창 허용
+            if (input.id === 'room-chat-input' || input.id === 'lobby-chat-input' || input.classList.contains('chat-input')) {
+                e.preventDefault();
+                processAndSendChat(input);
+            }
+        }
+    });
+
+    // 2. 전송 버튼 클릭: 로비 및 방의 모든 전송 버튼 지원
+    document.addEventListener('click', (e) => {
+        // 클릭된 요소가 <button>이거나 전송 역할을 하는 엘리먼트인지 확인
+        const btn = e.target.closest('button');
+        if (!btn) return;
+
+        // 방 만들기 버튼('create-room' 등)이나 원카드 버튼 등은 채팅 버튼이 아니므로 제외
+        if (btn.id === 'call-onecard' || btn.id === 'create-room-btn' || btn.classList.contains('room-create-btn')) {
+            return;
+        }
+
+        let input = null;
+
+        // 현재 화면이 lobby인지 방 안인지에 따라 알맞은 입력창 찾기
+        if (state.screen === 'lobby') {
+            input = document.getElementById('lobby-chat-input') || document.querySelector('#online-panel .chat-input, .lobby-chat input');
+        } else {
+            // 방 안(대기실/인게임)에서는 roomChat DOM 내부의 input을 직접 탐색
+            const roomChatContainer = document.getElementById('room-chat-slot') || document.querySelector('.room-chat');
+            input = document.getElementById('room-chat-input') || (roomChatContainer ? roomChatContainer.querySelector('input') : null);
+        }
+
+        // 만약 클릭한 버튼이 채팅 영역 안에 있거나, 일반적인 전송 버튼이라면 입력창과 매칭
+        if (input) {
+            const message = input.value.trim();
+            if (message) {
+                e.preventDefault();
+                processAndSendChat(input);
+            }
+        }
+    });
+
+    // 공통 채팅 전송 함수
+    function processAndSendChat(inputElement) {
+        if (!inputElement) return;
+        const message = inputElement.value.trim();
+        if (!message) return;
+
+        // 현재 화면 상태에 따라 target 자동 설정 ('lobby' 또는 'room')
+        const target = (state.screen === 'lobby') ? 'lobby' : 'room';
+
+        console.log("채팅 전송:", { message, target });
+        socket.emit('chatMessage', { message, target });
+        
+        inputElement.value = '';
+    }
+
+    // 3. 서버로부터 채팅 수신 처리
+    socket.on('receiveChat', (data) => {
+        const containerId = (data.scope === 'lobby') ? 'lobby-messages' : 'room-messages';
+        const container = document.getElementById(containerId);
+        if (!container) return;
+
+        const emptyMsg = container.querySelector('.chat-empty');
+        if (emptyMsg) emptyMsg.remove();
+
+        const msgEl = document.createElement('div');
+        msgEl.className = 'chat-message';
+        msgEl.innerHTML = `<time>${data.time}</time><strong>${escapeHtml(data.name)}:</strong> ${escapeHtml(data.message)}`;
+        
+        container.appendChild(msgEl);
+        container.scrollTop = container.scrollHeight;
+    });
+
+    function escapeHtml(text) {
+        return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    //이모티콘 전송 및 말풍선 출력 처리
+    function sendEmoticon(emoticon) {
+        socket.emit('sendEmoticon', { emoticonId: emoticon });
+    }
+
+    socket.on('receiveEmoticon', ({ socketId, emoticonId }) => {
+        // 이미 3번 함수가 좌석에 심어둔 data-socket-id를 기준으로 정확한 자리를 탐색
+        const targetSeat = document.querySelector(`.table-seat[data-socket-id="${socketId}"]`);
+        if (!targetSeat) return;
+
+        const bubble = targetSeat.querySelector('.emoticon-bubble');
+        if (!bubble) return;
+
+        bubble.textContent = emoticonId;
+        bubble.classList.add('show');
+
+        // 기존 타이머가 있으면 초기화 후 3초 뒤 숨김
+        if (bubble.timer) clearTimeout(bubble.timer);
+        bubble.timer = setTimeout(() => {
+            bubble.classList.remove('show');
+        }, 3000);
+    });
+
+
+    //좌석 socketId 정확한 매핑 함수 (이모티콘 오작동 해결)
+
+    function updateSeatSocketIds(players) {
+        if (!players || players.length === 0) return;
+
+        // 1. 모든 좌석의 기존 data-socket-id 초기화
+        const seats = document.querySelectorAll('.table-seat');
+        seats.forEach(seat => seat.removeAttribute('data-socket-id'));
+
+        // 2. 서버가 준 players 배열에서 '내 socketId'의 절대 인덱스 찾기
+        const myIndex = players.findIndex(p => p && p.socketId === socket.id);
+        if (myIndex === -1) return;
+
+        const totalPlayers = players.length;
+
+        // 3. 시계방향 좌석 클래스 순서 (남 -> 동 -> 북 -> 서)
+        const seatClasses = ['.seat-south', '.seat-east', '.seat-north', '.seat-west'];
+
+        // 4. 각 플레이어별 상대적 위치를 계산하여 정확한 방향의 클래스에 매핑
+        players.forEach((p, absoluteIndex) => {
+            if (!p || !p.socketId) return;
+
+            // 나를 기준으로 한 상대적 거리 (0: 나(남), 1: 동, 2: 북, 3: 서)
+            const relativeOffset = (absoluteIndex - myIndex + totalPlayers) % totalPlayers;
+
+            // 해당 방향의 좌석 요소를 직접 타겟팅
+            const selector = seatClasses[relativeOffset];
+            if (selector) {
+                const targetSeat = document.querySelector(selector);
+                if (targetSeat) {
+                    targetSeat.dataset.socketId = p.socketId;
+                }
+            }
+        });
+    }
+
+    // 서버 이벤트 연동 (배열이든 객체든 처리하게)
+    socket.on('gameStart', (data) => {
+        const players = Array.isArray(data) ? data : (data && data.players);
+        updateSeatSocketIds(players);
+    });
+
+    socket.on('gameStateUpdate', (publicState) => {
+        const players = Array.isArray(publicState) ? publicState : (publicState && publicState.players);
+        updateSeatSocketIds(players);
+    });
+
+    socket.on('roomStateUpdated', (roomData) => {
+        const players = Array.isArray(roomData) ? roomData : (roomData && roomData.players);
+        updateSeatSocketIds(players);
+    });
+
+    // 4. HTML 이스케이프 유틸리티
+
+    function escapeHtml(text) {
+        return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
     </script>
 </body>
 </html>
