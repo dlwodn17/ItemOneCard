@@ -101,22 +101,30 @@ io.on('connection',(socket) => {
     //새 방 만들기 요청
     socket.on('createRoom', ({ title, playerName }) => {
         const newRoomId = String(roomCounter++);
+
+        // 파라미터로 넘어온 이름보다 소켓 객체에 저장된 최신 이름을 우선 사용 (없으면 파라미터나 기본값)
+        const currentName = socket.playerName || playerName || '플레이어';
+        socket.playerName = currentName;
+
+        // 방을 만들었으므로 로비 유저 목록에서 제거
+        lobbyUsers = lobbyUsers.filter(u => u.socketId !== socket.id);
+        io.emit('lobbyUsersUpdated', lobbyUsers);
         
-        //방정보
+        // 방 정보
         rooms[newRoomId] = {
             id: newRoomId,
             title: title || `방 ${newRoomId}`,
             hostId: socket.id,
-            players: [{ socketId: socket.id, id: 'P1', name: playerName || '플레이어' }],
+            players: [{ socketId: socket.id, id: 'P1', name: currentName }], // 최신 이름 반영
             spectators: [],
-            isPlaying:false
+            isPlaying: false
         };
 
         socket.currentRoomId = newRoomId;
         socket.join(newRoomId);
 
-        socket.emit('joinRoomSuccess',{roomId: newRoomId, myRole:'P1',roomData: rooms[newRoomId]});
-        io.emit('roomListUpdated',getPublicRoomInfo());
+        socket.emit('joinRoomSuccess', { roomId: newRoomId, myRole: 'P1', roomData: rooms[newRoomId] });
+        io.emit('roomListUpdated', getPublicRoomInfo());
     });
 
     //기존 방 입장하기 요청
@@ -135,6 +143,9 @@ io.on('connection',(socket) => {
             return socket.emit('errorMsg','방이 가득 찼어요');
         }
 
+        // 소켓 객체에 플레이어 이름을 저장
+        socket.playerName = playerName || '플레이어';
+
         let myRole ='';
 
         // 먼저온 4명에게 플레이어, 나머지 2명 관전자 부여
@@ -145,6 +156,9 @@ io.on('connection',(socket) => {
             myRole = `관전자${room.spectators.length + 1}`;
             room.spectators.push({socketId:socket.id, id:myRole,name: playerName || '플레이어'});
         }
+
+        lobbyUsers = lobbyUsers.filter(u => u.socketId !== socket.id);
+        io.emit('lobbyUsersUpdated', lobbyUsers);
         
         socket.currentRoomId =roomId;
         socket.join(roomId);
@@ -159,6 +173,8 @@ io.on('connection',(socket) => {
     //대기실에서 로비로 나가기 버튼 처리
     socket.on('leaveRoom',() =>{
         processUserExit(socket);
+
+        socket.emit('leaveRoomSuccess');
     });
 
     //접속 해제 처리 
@@ -252,21 +268,12 @@ io.on('connection',(socket) => {
 
     // 기능 추가 1. 채팅 메시지 처리 (로비 또는 게임방 안)
     socket.on('chatMessage', ({ message, target }) => {
-        // target: 'lobby' 또는 'room'
-        // 유저 이름 찾기 (로비 유저 또는 방 안의 플레이어/관전자 중에서 탐색)
-        let senderName = '플레이어';
-        const lobbyUser = lobbyUsers.find(u => u.socketId === socket.id);
-        if (lobbyUser) {
-            senderName = lobbyUser.name;
-        } else if (socket.currentRoomId && rooms[socket.currentRoomId]) {
-            const room = rooms[socket.currentRoomId];
-            const member = [...room.players.filter(Boolean), ...room.spectators].find(m => m.socketId === socket.id);
-            if (member) senderName = member.name;
-        }
+        // 소켓 객체에 저장된 최신 이름을 우선 사용 (없으면 기본값)
+        const senderName = socket.playerName || '플레이어';
 
         const chatData = {
             socketId: socket.id,
-            name: senderName,
+            name: senderName, //  닉네임 변경 사항이 실시간으로 바로 반영됨!
             message,
             time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         };
@@ -290,6 +297,54 @@ io.on('connection',(socket) => {
             socketId: socket.id,
             emoticonId
         });
+    });
+
+    // 닉네임 변경 요청 처리
+    socket.on('updateName', ({ playerName }) => {
+        const cleanName = playerName ? playerName.trim().substring(0, 10) : '플레이어';
+        const oldName = socket.playerName; // (선택) 기존 이름을 기억해 둘 수도 있습니다.
+        
+        // 1. 소켓 객체에 이름 저장
+        socket.playerName = cleanName;
+
+        // 2. 로비 유저 목록 갱신
+        const lobbyUser = lobbyUsers.find(u => u.socketId === socket.id);
+        if (lobbyUser) {
+            lobbyUser.name = cleanName;
+            io.emit('lobbyUsersUpdated', lobbyUsers);
+        }
+
+        // 3. 방 안에 있는 경우 (대기실 또는 게임 중)
+        if (socket.currentRoomId && rooms[socket.currentRoomId]) {
+            const room = rooms[socket.currentRoomId];
+            
+            // 플레이어 또는 관전자 목록에서 이름 변경
+            const player = room.players.find(p => p.socketId === socket.id);
+            if (player) {
+                player.name = cleanName;
+            } else {
+                const spectator = room.spectators.find(s => s.socketId === socket.id);
+                if (spectator) {
+                    spectator.name = cleanName;
+                }
+            }
+
+            // 만약 이 유저가 방장(host)이라면 방 정보의 방장 이름이나 공개 방 정보도 갱신될 수 있도록 처리
+            // (getPublicRoomInfo에서 room 객체의 players[0] 등을 방장 이름으로 쓰고 있다면 자동으로 반영됩니다)
+
+            // 방 안의 모든 사람에게 바뀐 방 상태 전파
+            io.to(socket.currentRoomId).emit('roomStateUpdated', { 
+                players: room.players, 
+                spectators: room.spectators, 
+                hostId: room.hostId 
+            });
+        }
+
+        // 전체 로비에 방 목록 정보(방 제목, 방장 이름 등) 실시간 갱신 전파
+        io.emit('roomListUpdated', getPublicRoomInfo());
+
+        // 5. 변경을 요청한 본인에게 성공 신호 전송
+        socket.emit('nameUpdated', { socketId: socket.id, newName: cleanName });
     });
     
 });
@@ -401,9 +456,21 @@ function processUserExit(socket){
                 });
             }
         }
+        
+        // 유저가 방을 나왔으므로 다시 로비 유저 목록에 추가 (중복 방지 체크 포함)
+        console.log('[퇴장 디버깅] 퇴장 시도하는 socket.id:', socket.id);
+        console.log('[퇴장 디버깅] 현재 lobbyUsers 상태:', lobbyUsers);
 
+        if (!lobbyUsers.some(u => u.socketId === socket.id)) {
+            const userName = socket.playerName || socket.name || `플레이어_${socket.id.substr(0,4)}`;
+            lobbyUsers.push({ socketId: socket.id, name: userName });
+            console.log('[퇴장 디버깅] lobbyUsers에 새로 추가됨:', userName);
+        } else {
+            console.log('[퇴장 디버깅] 이미 lobbyUsers에 존재함 (추가 안 됨)');
+        }
+
+        io.emit('lobbyUsersUpdated', lobbyUsers);
         io.emit('roomListUpdated', getPublicRoomInfo());
-
 }
 
 

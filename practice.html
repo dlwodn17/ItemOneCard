@@ -401,9 +401,13 @@
             <aside aria-label="내 정보">
                 <section class="panel profile">
                     <div class="avatar" aria-hidden="true">♠</div>
-                    <div>
-                        <h2 id="profile-name"></h2>
-                        <p class="muted">플레이어</p>
+                    <div style="display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;">
+                        <h2 id="profile-name" style="margin: 0; text-align: center;"></h2>
+                        <button id="edit-profile-name" title="이름 변경" style="background: none; border: none; cursor: pointer; padding: 0; display: flex; align-items: center;">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4A90E2" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(0deg);">
+                                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                            </svg>
+                        </button>
                     </div>
                     <div class="profile-details">
                         <div><span>현재 위치</span><strong id="profile-location">로비</strong></div>
@@ -412,7 +416,19 @@
                 </section>
                 <section class="panel online-panel" id="online-panel" aria-labelledby="online-title">
                     <h2 id="online-title">로비 접속자</h2>
-                    <ul class="online-users" id="online-users"><li><span class="online-dot" aria-hidden="true"></span><span id="online-name"></span><small>나</small></li></ul>
+                    <ul class="online-users" id="online-users">
+                        <li>
+                            <span class="online-dot" aria-hidden="true"></span>
+                            <span id="online-name"></span>
+                            <!-- 연필 버튼 추가 -->
+                            <button id="edit-profile-name" title="이름 변경" style="background: none; border: none; cursor: pointer; padding: 0; display: flex; align-items: center;">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#4A90E2" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="transform: rotate(0deg);">
+                                    <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+                                </svg>
+                            </button>
+                            <small>나</small>
+                        </li>
+                    </ul>
                 </section>
             </aside>
 
@@ -619,13 +635,8 @@
         const escapeHTML = value => String(value).replace(/[&<>"']/g, character => ({
             '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
         }[character]));
-
-        // 소켓 서버 연결 (배포 환경과 로컬 환경 자동 분기)
-
-        const socket = io(window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
-            ? 'http://localhost:3000' 
-            : window.location.origin // Render에 배포된 실제 도메인 주소를 자동으로 사용합니다!
-        );
+        // 소켓 서버연결 
+        const socket = io('http://localhost:3000');
         const MAX_PLAYERS = 4;
         const MAX_CAPACITY = 6;
         const me = { id: 'user_' + Math.random().toString(36).substr(2, 9), name: '플레이어_' + Math.floor(Math.random() * 100)};
@@ -872,7 +883,16 @@
                 $('create-error').textContent = '방 이름을 입력해주세요.';
                 return;
             }
-            socket.emit('createRoom', { title, playerName: me.name });
+
+            // 화면(프로필 h2)에 현재 떠 있는 가장 최신 닉네임을 직접 가져옵니다!
+            const currentLatestName = $('profile-name') ? $('profile-name').textContent.trim() : '플레이어';
+
+            // 최신 닉네임을 담아서 서버로 전송
+            socket.emit('createRoom', { title, playerName: currentLatestName });
+            
+            //  만약 클라이언트가 관리하는 me 객체나 state가 있다면 여기서 같이 동기화
+            if (typeof me !== 'undefined') me.name = currentLatestName;
+
             $('create-dialog').close();
         });
 
@@ -886,6 +906,10 @@
         // '로비로 나가기' 클릭 -> 서버로 'leaveRoom' 이벤트 전송
         $('leave-room').addEventListener('click', () => {
             socket.emit('leaveRoom');
+        });
+
+        // 서버에서 나가기 완료 신호를 받으면 그때 안전하게 로비 화면으로 전환
+        socket.on('leaveRoomSuccess', () => {
             state.currentRoom = null;
             showScreen('lobby');
             socket.emit('getRoomList'); // 로비 돌아와서 방 목록 새로고침
@@ -1433,6 +1457,39 @@
     socket.on('roomStateUpdated', (roomData) => {
         const players = Array.isArray(roomData) ? roomData : (roomData && roomData.players);
         updateSeatSocketIds(players);
+    });
+
+    // 1. 닉네임 변경 공통 함수
+    function promptAndUpdateName() {
+        const currentName = $('profile-name').textContent || '플레이어';
+        const newName = prompt('변경할 닉네임을 입력하세요 (최대 10글자):', currentName);
+        
+        if (!newName || !newName.trim()) return;
+        
+        const trimmedName = newName.trim().substring(0, 10);
+        
+        // 서버로 닉네임 변경 요청 전송
+        socket.emit('updateName', { playerName: trimmedName });
+    }
+
+    // 2. 프로필 영역 연필 버튼 이벤트 연결
+    const editProfileBtn = $('edit-profile-name');
+    if (editProfileBtn) {
+        editProfileBtn.addEventListener('click', promptAndUpdateName);
+    }
+
+    // 3. 로비 접속자 목록 영역 연필 버튼 이벤트 연결
+    const editOnlineBtn = $('edit-online-name');
+    if (editOnlineBtn) {
+        editOnlineBtn.addEventListener('click', promptAndUpdateName);
+    }
+
+    // 4. 서버로부터 변경 성공 응답을 받았을 때 화면에 즉시 반영
+    socket.on('nameUpdated', ({ socketId, newName }) => {
+        if (socketId === socket.id) {
+            if ($('profile-name')) $('profile-name').textContent = newName;
+            if ($('online-name')) $('online-name').textContent = newName;
+        }
     });
 
     // 4. HTML 이스케이프 유틸리티
