@@ -144,11 +144,13 @@ io.on('connection',(socket) => {
         }
 
         // 소켓 객체에 플레이어 이름을 저장
-        socket.playerName = playerName || '플레이어';
+        const currentName = socket.playerName || playerName || '플레이어';
+        socket.playerName = currentName;
+    
 
         let myRole ='';
 
-        // 먼저온 4명에게 플레이어, 나머지 2명 관전자 부여
+        // 먼저온 4명에게 플레ㄹ어, 나머지 2명 관전자 부여
         if(room.players.length < MAX_PLAYERS){
             myRole =`P${room.players.length + 1}`;
             room.players.push({socketId:socket.id,id:myRole,name: playerName || '플레이어'});
@@ -162,6 +164,14 @@ io.on('connection',(socket) => {
         
         socket.currentRoomId =roomId;
         socket.join(roomId);
+
+        // 입장한 유저의 이름을 담아 방 안 사람들에게 시스템 채팅 브로드캐스트
+        io.to(roomId).emit('receiveChat', {
+            scope: 'room',
+            time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+            name: '시스템',
+            message: `${currentName}님이 입장하셨습니다. (현재 ${room.players.length + room.spectators.length}/${MAX_PLAYERS}명)`
+        });
 
         // 입장 성공 전달 및 모든 상태 업데이트
         socket.emit('joinRoomSuccess',{roomId: roomId, myRole: myRole, roomData: rooms[roomId]});

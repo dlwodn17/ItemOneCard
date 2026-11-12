@@ -206,13 +206,24 @@
             border: 7px solid #b6d1e4; border-radius: 30px;
             background: radial-gradient(ellipse at 50% 45%, #e8f6fc 0, #c6e5f2 65%, #b9dbe9 100%);
             box-shadow: inset 0 0 0 2px #f3fbff, inset 0 0 55px #6eabc23d, 0 12px 28px #203b570d;
+            transition: all 0.4s ease; /* 색상이 부드럽게 전환되도록 추가 */
+        }
+        /* 내 턴일 때 게임 판 전체가 녹색 테마로 변신 */
+        .game-table.is-my-turn {
+            border: 7px solid #86efac !important; /* 상큼한 연두색 테두리 */
+            background: radial-gradient(ellipse at 50% 45%, #f0fdf4 0, #dcfce7 65%, #bbf7d0 100%) !important; /* 초록빛 그라데이션 배경 */
+            box-shadow: inset 0 0 0 2px #f0fdf4, inset 0 0 60px rgba(34, 197, 94, 0.25), 0 12px 32px rgba(34, 197, 94, 0.15) !important;
         }
         .table-watermark { position: absolute; left: 50%; top: 26%; transform: translateX(-50%); font: 900 15px Arial, sans-serif; letter-spacing: 4px; color: #6c9ab054; pointer-events: none; }
+        /* 내 턴일 때 테이블 워터마크나 중앙 분위기도 살짝 초록빛으로 싱그럽게 강조 (선택사항) */
+        .game-table.is-my-turn .table-watermark {
+            color: #4ade8054 !important;
+        }
         .table-seat { min-width: 0; text-align: center; z-index: 1; }
-        .seat-north { grid-column: 2; grid-row: 1; }
-        .seat-west { grid-column: 1; grid-row: 2; align-self: center; }
-        .seat-east { grid-column: 3; grid-row: 2; align-self: center; }
-        .seat-south { grid-column: 1 / -1; grid-row: 3; align-self: end; }
+        .seat-north { grid-column: 2; grid-row: 1; max-width: 160px; max-height: 100px; margin: 0 auto; padding: 6px 10px !important;}
+        .seat-west { grid-column: 1; grid-row: 2; align-self: center; padding: 6px 10px !important;}
+        .seat-east { grid-column: 3; grid-row: 2; align-self: center; padding: 6px 10px !important;}
+        .seat-south { grid-column: 1 / -1; grid-row: 3; align-self: end; margin: 0 auto;}
         .seat-label { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 7px; }
         .seat-direction { display: inline-grid; place-items: center; width: 23px; height: 23px; border-radius: 7px; color: #5e879e; background: #ffffffa6; font-size: 11px; }
         .seat-name { display: block; font-size: 12px; overflow-wrap: anywhere; }
@@ -235,7 +246,7 @@
         .card-rank { position: absolute; top: 5px; left: 7px; font-size: 17px; font-weight: 800; }
         .card-rank-bottom { position: absolute; right: 7px; bottom: 4px; font-size: 17px; font-weight: 800; transform: rotate(180deg); }
         .card-red { color: #c25e64; }
-        .my-hand { display: flex; align-items: flex-end; justify-content: flex-start; gap: 5px; max-width: 100%; width: max-content; margin: auto; min-height: 145px; padding: 24px 10px 12px; overflow-x: auto; }
+        .my-hand { display: flex; align-items: flex-end; justify-content: flex-start; gap: 5px; max-width: 100%; width: max-content; margin: auto; min-height: auto; padding: 14px 10px 12px; overflow-x: auto; }
         .hand-card { position: relative; flex: 0 0 66px; height: 98px; display: grid; place-items: center; padding: 0; border: 1px solid #c2d4e1; border-radius: 8px; background: #fff; color: #29445d; box-shadow: 0 4px 8px #203b5721; transition: transform .18s, box-shadow .18s; }
         .hand-card .card-suit { font-size: 30px; }
         .hand-card.card-red { color: #c25e64; }
@@ -316,7 +327,72 @@
             .screen-slide-in, .card-arriving, .card-leaving, .discard-arriving, .pile-drawing { animation: none; }
             .hand-card, .draw-pile { transition: none; }
         }
+
+        /* 현재 턴인 플레이어 좌석(패널) 연두색 하이라이트 효과 */
+        .table-seat.is-turn {
+            background: #f0fdf4 !important;
+            border: 2px solid #22c55e !important;
+            border-radius: 12px;
+            box-shadow: 0 0 15px rgba(34, 197, 94, 0.4);
+            transform: scale(1.03);
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        /* 하단 내 자리(south)일 때 강조 */
+        .seat-south.is-turn {
+            background: #e6f9ed !important;
+            border: 2px solid #22c55e !important;
+            box-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
+        }
+
+        /* 턴 안내 뱃지 디자인 */
+        .turn-badge {
+            display: inline-block;
+            background: #22c55e;
+            color: white;
+            font-size: 10px;
+            padding: 1px 5px;
+            border-radius: 8px;
+            font-weight: bold;
+            margin-left: 4px;
+            animation: bounceBadge 1s infinite alternate;
+        }
+
+        @keyframes bounceBadge {
+            from { transform: translateY(0); }
+            to { transform: translateY(-2px); }
+        }
         
+        /* 카드가 손패에서 더미 쪽으로 날아가는 애니메이션 */
+        @keyframes cardFlyToCenter {
+            0% {
+                opacity: 1;
+                transform: translate(0, 0) scale(1) rotate(0deg);
+            }
+            100% {
+                opacity: 0.2;
+                /* 변수가 없더라도 기본적으로 위쪽(중앙)으로 훅 날아가도록 기본값 지정 */
+                transform: translate(var(--fly-x, 0px), var(--fly-y, -150px)) scale(0.8) rotate(15deg);
+            }
+        }
+
+        .card-leaving {
+            animation: cardFlyToCenter 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards !important;
+            pointer-events: none;
+            z-index: 100; /* 다른 카드들 위에 떠서 날아가도록 설정 */
+        }
+
+        /* 화면 최상단에서 자유롭게 날아가는 카드 복제본 */
+        .flying-card-clone {
+            position: fixed;
+            margin: 0;
+            z-index: 9999;
+            pointer-events: none;
+            transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.35s ease;
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.25);
+        }
+
         /* ================= 이모티콘 & 말풍선 스타일 ================= */
         .table-seat {
             position: relative; /* 말풍선 위치 기준 */
@@ -503,13 +579,13 @@
                 <!-- 인게임: 기존 게임 시작 이벤트가 이 화면을 엶. -->
                 <section data-screen="game" hidden aria-labelledby="game-title">
                     <div class="screen-heading game-heading">
-                        <h1 id="game-title" tabindex="-1">LAST ONE · 게임 진행 중</h1>
+                        <h1 id="game-title" tabindex="-1">게임 진행 중</h1>
                         <button class="button" id="game-leave" type="button">← 로비로</button>
                     </div>
                     <div class="game-layout">
                         <div>
                             <section class="game-table" aria-label="4인 원카드 테이블">
-                                <span class="table-watermark" aria-hidden="true">LAST ONE</span>
+                                <span class="table-watermark" aria-hidden="true"></span>
                                 <div class="table-seat seat-north">
                                     <div class="emoticon-bubble"></div>
                                     <div class="seat-label"><strong class="seat-name" id="north-name"></strong><span class="seat-card-count" id="north-count">7장</span></div>
@@ -531,11 +607,11 @@
                                 <div class="table-center">
                                     <div class="pile">
                                         <button class="draw-pile" id="draw-pile" type="button" aria-label="카드 더미에서 한 장 가져오기"><span aria-hidden="true">LAST<br>ONE</span></button>
-                                        <span class="pile-caption">가져올 패 · <span id="deck-count"></span></span>
+                                        <span class="pile-caption"><span id="deck-count"></span></span>
                                     </div>
                                     <div class="pile">
-                                        <div class="discard-slot"><div class="discard-card" id="discard-card" role="img"></div></div>
-                                        <span class="pile-caption">버린 패 · <span id="discard-count"></span></span>
+                                        <div class="discard-slot"><div class="discard-card" id="discard-card" role="img"></div></div> <!-- 가져올 패 -->
+                                        <span class="pile-caption"><span id="discard-count"></span></span> <!-- 버린 패 -->
                                     </div>
                                 </div>
                                 <div class="table-seat seat-south">
@@ -584,7 +660,7 @@
         </div>
         <form id="create-form">
             <label class="field-label" for="create-name">방 이름</label>
-            <input class="field" id="create-name" maxlength="40" placeholder="친구들과 즐거운 한 판" required>
+            <input class="field" id="create-name" maxlength="40" placeholder="친구들과 즐거운 한 판">
             <fieldset class="room-type">
                 <legend>방 공개 설정</legend>
                 <div class="room-type-options">
@@ -881,10 +957,10 @@
         // 방 만들기 폼 제출 -> 서버로 'createRoom' 이벤트 전송
         $('create-form').addEventListener('submit', event => {
             event.preventDefault();
-            const title = $('create-name').value.trim();
+            let title = $('create-name').value.trim();
+            // 만약 방 이름을 입력하지 않았다면 기본 제목을 자동으로 지정
             if (!title) {
-                $('create-error').textContent = '방 이름을 입력해주세요.';
-                return;
+                title = "친구들과 즐거운 한 판";
             }
 
             // 화면(프로필 h2)에 현재 떠 있는 가장 최신 닉네임을 직접 가져옵니다!
@@ -903,7 +979,18 @@
         $('room-list').addEventListener('click', event => {
             const button = event.target.closest('[data-room-id]');
             if (!button || button.disabled) return;
-            socket.emit('joinRoom', { roomId: button.dataset.roomId, playerName: me.name });
+
+            // 화면에 현재 떠 있는 가장 최신 닉네임을 직접 가져옴
+            const currentLatestName = document.getElementById('profile-name') ? document.getElementById('profile-name').textContent.trim() : '플레이어';
+
+            // 최신 닉네임을 담아서 서버로 전송
+            socket.emit('joinRoom', { 
+                roomId: button.dataset.roomId, 
+                playerName: currentLatestName 
+            });
+
+            // 만약 클라이언트 상태 객체가 있다면 여기서 함께 동기화
+            if (typeof me !== 'undefined') me.name = currentLatestName;
         });
 
         // '로비로 나가기' 클릭 -> 서버로 'leaveRoom' 이벤트 전송
@@ -921,6 +1008,17 @@
         // 초기 실행
         $('profile-name').textContent = me.name;
         showScreen('lobby', false);
+
+        // 내 카드 패널(.my-hand)에 마우스 휠 가로 스크롤 기능 연결
+        const myHandEl = document.querySelector('.my-hand');
+        if (myHandEl) {
+            myHandEl.addEventListener('wheel', (e) => {
+                if (e.deltaY !== 0) {
+                    e.preventDefault(); // 세로 스크롤 방지
+                    myHandEl.scrollLeft += e.deltaY; // 세로 휠 값을 가로 스크롤 이동량으로 전환
+                }
+            }, { passive: false });
+        }
 
     </script>
     <!-- 추가 UI: 기존 스크립트와 구분. 서버 미연결 사항은 이 스크립트의 todo 참고. -->
@@ -1037,6 +1135,52 @@
                 }
                 return ui.game;
             }
+
+            function flyCardBetween(startEl, targetEl, cardData = null, isBack = false) {
+                if (!startEl || !targetEl) return;
+
+                const startRect = startEl.getBoundingClientRect();
+                const targetRect = targetEl.getBoundingClientRect();
+
+                // 화면에 보이지 않는 상태면 중단
+                if (startRect.width === 0 || targetRect.width === 0) return;
+
+                // 1. 복제 카드 생성
+                const clone = document.createElement('div');
+                if (isBack) {
+                    // 뒷면 카드 (카드 먹을 때)
+                    clone.className = 'draw-pile flying-card-clone';
+                    clone.innerHTML = '<span>CARD</span>';
+                } else {
+                    // 앞면 카드 (카드 낼 때)
+                    const d = toDisplayCard(cardData);
+                    clone.className = `hand-card flying-card-clone${d.isRed ? ' card-red' : ''}`;
+                    clone.innerHTML = cardFace(cardData);
+                }
+
+                // 2. 시작 위치 고정
+                clone.style.left = `${startRect.left}px`;
+                clone.style.top = `${startRect.top}px`;
+                clone.style.width = `${startRect.width}px`;
+                clone.style.height = `${startRect.height}px`;
+                document.body.appendChild(clone);
+
+                // 3. 목적지까지의 거리 계산
+                const deltaX = (targetRect.left + targetRect.width / 2) - (startRect.left + startRect.width / 2);
+                const deltaY = (targetRect.top + targetRect.height / 2) - (startRect.top + startRect.height / 2);
+
+                // 4. 다음 프레임에 이동 시작
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        clone.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(0.95) rotate(${isBack ? -8 : 8}deg)`;
+                        clone.style.opacity = '0.85';
+                    });
+                });
+
+                // 5. 도착 후 복제본 제거
+                setTimeout(() => clone.remove(), 360);
+            }
+
             function toDisplayCard(card) {
                 if (!card) return { suit: '', rank: '', isRed: false };
                 if (card.suit && card.rank) {
@@ -1127,9 +1271,17 @@
                 const game = ui.game;
                 if (!game) return;
                 game.busy = true;
-                if (button) button.classList.add('card-leaving');
+
+                const card = game.hand[index];
+                if (button && card) {
+                    // 손패 위치에서 중앙 버리는 더미로 복제 카드 발사
+                    flyCardBetween(button, $('discard-card'), card, false);
+                    button.style.opacity = '0'; // 원본은 즉시 숨김
+                }
+
                 $('draw-pile').disabled = true;
                 socket.emit('playCard', { cardIndex: index, newShape });
+
                 setTimeout(() => {
                     if (ui.game === game && game.busy) {
                         game.busy = false;
@@ -1137,6 +1289,7 @@
                     }
                 }, 600);
             }
+
             function playCard(index, button) {
                 const game = ui.game;
                 const card = game?.hand[index];
@@ -1164,9 +1317,14 @@
                 const game = ui.game;
                 if (!game || game.busy || !isMyTurn()) return;
                 game.busy = true;
+
+                //  뽑기 더미에서 내 손패 중앙으로 뒷면 카드 발사
+                flyCardBetween($('draw-pile'), $('my-hand'), null, true);
+
                 $('draw-pile').classList.add('pile-drawing');
                 $('draw-pile').disabled = true;
                 socket.emit('drawCard');
+                
                 setTimeout(() => {
                     $('draw-pile').classList.remove('pile-drawing');
                     if (ui.game === game && game.busy) {
@@ -1186,8 +1344,22 @@
                 const sourcePlayers = pub ? pub.players : room.players;
                 const mine = sourcePlayers.findIndex(player => player && player.socketId === socket.id);
                 const anchor = mine < 0 ? 0 : mine;
+
+                //  현재 내 턴인지 여부를 판별
+                const myPlayer = sourcePlayers.find(p => p.socketId === socket.id);
+                const isMyTurn = pub && myPlayer && pub.currentTurnSocketId === myPlayer.socketId && !myPlayer.isEliminated;
+
+                //  게임 판 전체에 '내 턴' 여부 적용
+                const gameTableEl = document.querySelector('.game-table');
+                if (gameTableEl) {
+                    gameTableEl.classList.toggle('is-my-turn', isMyTurn);
+                }
+                
+                //  각 방향별 좌석 순회 렌더링
                 [['south', 0], ['east', 1], ['north', 2], ['west', 3]].forEach(([direction, offset]) => {
                     const player = sourcePlayers[(anchor + offset) % 4];
+                    const seatEl = document.querySelector(`.seat-${direction}`);
+
                     if (!player) {
                         $(`${direction}-name`).textContent = '빈자리';
                         $(`${direction}-count`).textContent = '0장';
@@ -1195,12 +1367,24 @@
                         return;
                     }
                     const isTurn = pub && pub.currentTurnSocketId === player.socketId && !player.isEliminated;
+                    const isMe = (player.socketId === socket.id);
+
+                    // 상대방 턴일 때만 해당 상대방 자리에 'is-turn'을 켬
+                    if (seatEl) {
+                        if (isMe) {
+                            seatEl.classList.remove('is-turn'); // 내 자리는 깔끔하게 기본 유지
+                        } else {
+                            seatEl.classList.toggle('is-turn', isTurn); // 상대방 턴일 때만 그 자리 하이라이트
+                        }
+                    }
+
                     const tags = [
                         player.socketId === socket.id ? ' · 나' : '',
-                        isTurn ? ' · [현재 턴]' : '',
+                        //isTurn ? ' · [현재 턴]' : '',
                         player.onecardCalled ? ' · [원카드!]' : '',
                         player.isEliminated ? ' · (탈락)' : ''
                     ].join('');
+
                     const count = typeof player.cardCount === 'number' ? player.cardCount : 7;
                     $(`${direction}-name`).textContent = `${player.name}${tags}`;
                     $(`${direction}-count`).textContent = player.isEliminated ? '탈락' : `${count}장`;
@@ -1375,8 +1559,14 @@
         if (emptyMsg) emptyMsg.remove();
 
         const msgEl = document.createElement('div');
-        msgEl.className = 'chat-message';
-        msgEl.innerHTML = `<time>${data.time}</time><strong>${escapeHtml(data.name)}:</strong> ${escapeHtml(data.message)}`;
+
+        if (data.name === '시스템') {
+            msgEl.className = 'chat-message system-msg';
+            msgEl.innerHTML = `<time>${data.time}</time> <em>${escapeHtml(data.message)}</em>`;
+        } else {
+            msgEl.className = 'chat-message';
+            msgEl.innerHTML = `<time>${data.time}</time><strong>${escapeHtml(data.name)}:</strong> ${escapeHtml(data.message)}`;
+        }
         
         container.appendChild(msgEl);
         container.scrollTop = container.scrollHeight;
