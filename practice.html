@@ -565,6 +565,10 @@
                             <section class="panel game-room-info" aria-label="현재 게임방">
                                 <strong id="game-room-name"></strong>
                                 <p id="game-info-text"></p>
+                                <!-- 타이머 UI를 추가 -->
+                                <div id="turn-timer-box" style="margin-top: 10px; font-weight: bold; color: #c25e64;">
+                                    ⏱️ 남은 턴 시간: <span id="turn-timer-sec">15</span>초
+                                </div>
                                 <span class="game-spectators" id="game-spectators"></span>
                                 <button class="button primary" id="call-onecard" type="button" style="width: 100%; margin-top: 10px;">원카드!</button>
                             </section>
@@ -607,8 +611,7 @@
         <form id="custom-form">
             <label class="field-label" for="custom-code">초대 코드</label>
             <input class="field" id="custom-code" name="code" maxlength="16" placeholder="초대 코드를 입력하세요" autocomplete="off" required>
-            <!-- todo: 서버에 초대 코드 입장 기능이 연결되면 이 버튼의 disabled를 해제할것. -->
-            <button class="button primary dialog-submit" type="submit" disabled>입장하기</button>
+            <button class="button primary dialog-submit" type="submit">입장하기</button>
         </form>
     </dialog>
 
@@ -768,7 +771,9 @@
             const room = state.currentRoom;
             if (!room) return;
             $('waiting-title').textContent = room.title;
-            $('waiting-number').textContent = `ROOM ${room.id}`;
+            $('waiting-number').textContent = room.isPrivate && room.inviteCode 
+                ? `커스텀 방 · 초대 코드: ${room.inviteCode}` 
+                : `ROOM ${room.id}`;
             
             const players = room.players || [];
             const spectators = room.spectators || [];
@@ -888,10 +893,11 @@
             }
 
             // 화면(프로필 h2)에 현재 떠 있는 가장 최신 닉네임을 직접 가져옵니다!
+            const roomType = $('create-form').elements.namedItem('room-type').value;
             const currentLatestName = $('profile-name') ? $('profile-name').textContent.trim() : '플레이어';
 
             // 최신 닉네임을 담아서 서버로 전송
-            socket.emit('createRoom', { title, playerName: currentLatestName });
+            socket.emit('createRoom', { title, playerName: currentLatestName, roomType });
             
             //  만약 클라이언트가 관리하는 me 객체나 state가 있다면 여기서 같이 동기화
             if (typeof me !== 'undefined') me.name = currentLatestName;
@@ -972,17 +978,12 @@
             // 커스텀 선택을 무시한 채 공개 방을 생성하지 않도록 제출 비활성화 해놓음.
             function updateRoomType() {
                 const custom = $('create-form').elements.namedItem('room-type').value === 'custom';
-                $('create-submit').disabled = custom;
+                $('create-submit').disabled = false;
                 $('create-submit').textContent = custom ? '커스텀 방 만들기' : '방 만들고 입장하기';
             }
             $('create-form').addEventListener('change', updateRoomType);
             $('open-create').addEventListener('click', updateRoomType);
-            $('create-form').addEventListener('submit', event => {
-                if ($('create-form').elements.namedItem('room-type').value === 'custom') {
-                    event.preventDefault();
-                    event.stopImmediatePropagation();
-                }
-            }, true);
+        
             $('open-custom').addEventListener('click', () => {
                 $('custom-form').reset();
                 $('custom-dialog').showModal();
@@ -991,7 +992,15 @@
             $('close-custom').addEventListener('click', () => $('custom-dialog').close());
             // todo(서버 연결): 초대 코드로 입장하는 이벤트가 아직 없다.
             // 공개 방 번호를 초대 코드로 간주하거나 기존 joinRoom의 의미를 바꾸지 않는다.
-            $('custom-form').addEventListener('submit', event => event.preventDefault());
+           $('custom-form').addEventListener('submit', event => {
+                event.preventDefault();
+                const code = $('custom-code').value.trim();
+                if (!code) return;
+
+                const currentLatestName = $('profile-name') ? $('profile-name').textContent.trim() : me.name;
+                socket.emit('joinByInviteCode', { code, playerName: currentLatestName });
+                $('custom-dialog').close();
+            });
 
             // 3. 채팅 UI
             // todo(서버 연결): 현재 메시지는 이 브라우저에만 표시된다.
@@ -1071,9 +1080,15 @@
 
                 if (pub.attackStack > 0) {
                     if (topCard.number === 2) {
-                        return card.number === 3 || card.number === 2 || card.number === 1 || card.type === 'joker';
+                        if (card.number === 2 || card.type === 'joker') return true;
+                        if (card.number === 3 || card.number === 1) {
+                            return card.shape === topCard.shape || card.shape === pub.currentShape;
+                        }
                     } else if (topCard.number === 1) {
                         return card.number === 1 || card.type === 'joker';
+                        if (card.number === 3) {
+                        return card.shape === topCard.shape || card.shape === pub.currentShape;
+                    }
                     } else if (topCard.type === 'joker') {
                         return topCard.jokerType === 'black' && card.type === 'joker' && card.jokerType === 'color';
                     }
@@ -1083,10 +1098,13 @@
                 if (card.type === 'joker' || topCard.type === 'joker' || pub.currentShape === 'joker') return true;
                 return card.number === topCard.number || card.shape === pub.currentShape;
             }
+
+
             function cardFace(card) {
                 const d = toDisplayCard(card);
                 return `<span class="card-rank">${d.rank}</span><span class="card-suit" aria-hidden="true">${d.suit}</span><span class="card-rank-bottom" aria-hidden="true">${d.rank}</span>`;
             }
+
             function renderGameCards(arriving = false, played = false) {
                 const game = ui.game;
                 if (!game) return;
@@ -1446,6 +1464,61 @@
         });
     }
 
+    // 턴 타이머 함수
+    let clientInterval = null;
+    let remainingSeconds = 15;
+
+    function startClientTimer(seconds) {
+        if (clientInterval) clearInterval(clientInterval);
+        remainingSeconds = seconds;
+
+        const secEl = document.getElementById('turn-timer-sec');
+        const timerBox = document.getElementById('turn-timer-box');
+
+        if (secEl) secEl.textContent = remainingSeconds;
+        if (timerBox) {
+            timerBox.style.color = '#c25e64';
+            timerBox.style.fontWeight = 'bold';
+        }
+
+        clientInterval = setInterval(() => {
+            remainingSeconds--;
+            if (secEl) {
+                secEl.textContent = Math.max(0, remainingSeconds);
+            }
+
+            if (timerBox) {
+                if (remainingSeconds <= 5) {
+                    timerBox.style.color = '#ff0000';
+                    timerBox.style.transform = 'scale(1.05)';
+                } else {
+                    timerBox.style.color = '#c25e64';
+                    timerBox.style.transform = 'scale(1)';
+                }
+            }
+        
+
+            if (remainingSeconds <= 0) {
+                clearInterval(clientInterval);
+            }
+        }, 1000);
+    }
+
+    // 타이머를 멈추고 대기 문구로 바꾸는 함수 (내 차례가 아닐 때)
+    function stopClientTimer() {
+        if (clientInterval) {
+            clearInterval(clientInterval);
+            clientInterval = null;
+        }
+        const secEl = document.getElementById('turn-timer-sec');
+        const timerBox = document.getElementById('turn-timer-box');
+        if (secEl) secEl.textContent = '-';
+        if (timerBox) {
+            timerBox.style.color = '#70869b'; 
+            timerBox.style.transform = 'scale(1)';
+        }
+    }
+
     // 서버 이벤트 연동 (배열이든 객체든 처리하게)
     socket.on('gameStart', (data) => {
         const players = Array.isArray(data) ? data : (data && data.players);
@@ -1455,6 +1528,14 @@
     socket.on('gameStateUpdate', (publicState) => {
         const players = Array.isArray(publicState) ? publicState : (publicState && publicState.players);
         updateSeatSocketIds(players);
+
+        if (publicState && publicState.currentTurnSocketId === socket.id) {
+            const timeLimit = publicState.turnTimeLimit || 15;
+            startClientTimer(timeLimit);
+        } else {
+            // 내 턴이 아니면 타이머를 멈추고 대기 상태로 변경
+            stopClientTimer();
+        }
     });
 
     socket.on('roomStateUpdated', (roomData) => {

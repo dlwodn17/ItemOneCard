@@ -77,6 +77,28 @@ class OneCardGame {
     }
   }
 
+  // 시간 초과 시 강제 드로우 및 턴 넘김 처리 함수 추가
+  handleTimeOut() {
+    const currentPlayer = this.playerzone[this.currentturn];
+    if (!currentPlayer || currentPlayer.isEliminated) return { isOver: false };
+
+    // 강제 1장 드로우 (공격 스택이 있다면 공격 스택만큼, 혹은 기본 1장)
+    const drawCount = this.attackstack > 0 ? this.attackstack : 1;
+    for (let i = 0; i < drawCount; i++) {
+      if (this.deck.length === 0) this.shuffle();
+      if (this.deck.length === 0) break;
+      currentPlayer.hand.push(this.deck.pop());
+    }
+    this.attackstack = 0;
+    this.checkOneCard(this.currentturn);
+
+    const overResult = this.gameOver();
+    if (overResult.isOver) return { success: true, overResult };
+
+    this.nextTurn(1);
+    return { success: true, timeout: true, targetId: currentPlayer.id };
+  }
+
   // 덱 드로우
   drawCard(socketId) {
     const playerIndex = this.playerzone.findIndex(p => p.socketId === socketId);
@@ -134,7 +156,7 @@ class OneCardGame {
     const topCard = this.submitzoneCards[this.submitzoneCards.length - 1];
     if (this.attackstack > 0) return this.canDefend(card, topCard);
     if (card.type === 'joker' || topCard.type === 'joker' || this.currentshape === 'joker') return true;
-    return card.number === topCard.number || card.shape === this.currentshape;
+    return card.number === topCard.number || card.shape === this.currentshape;s    
   }
 
   canDefend(card, topCard) {
@@ -243,6 +265,7 @@ class OneCardGame {
   }
 
   gameOver() {
+    
     for (const p of this.playerzone) {
       if (!p.isEliminated && p.hand.length === 0) {
         return { isOver: true, winner: p.id, reason: 'clear' };
@@ -293,6 +316,7 @@ class OneCardGame {
       attackStack: this.attackstack,
       undirection: this.undirection,
       deckCount: this.deck.length,
+      turnTimeLimit: this.turnTimeLimit,
       // 상대 플레이어 손패는 장수만 전달 (보안)
       players: this.playerzone.map(p => ({
         id: p.id,

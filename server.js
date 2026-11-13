@@ -15,6 +15,11 @@ function broadcastGameState(roomId) {
   const room = rooms[roomId];
   if (!room || !room.game) return;
 
+  if (room.turnTimer) {
+    clearTimeout(room.turnTimer);
+    room.turnTimer = null;
+  }
+
   const publicState = room.game.getPublicState();
 
   // 모든 인원에게 기본 상태 전달
@@ -24,12 +29,43 @@ function broadcastGameState(roomId) {
   room.game.playerzone.forEach(p => {
     io.to(p.socketId).emit('myHandUpdate', p.hand);
   });
+
+  // 게임이 진행 중이고 오버가 아니라면 타이머 구동 (turnTimeLimit * 1000 밀리초)
+  const timeLimit = (room.game.turnTimeLimit || 15) * 1000;
+  
+  room.turnTimer = setTimeout(() => {
+    if (!room || !room.isPlaying || !room.game) return;
+
+    // 시간 초과 처리 수행
+    const timeoutResult = room.game.handleTimeOut();
+    if (timeoutResult.success) {
+      // 시간 초과 안내 메시지 전송
+      io.to(roomId).emit('oneCardResult', {
+        type: 'penalty',
+        callerId: '시스템',
+        penalized: [timeoutResult.targetId],
+        msg: `${timeoutResult.targetId} 님의 시간이 초과되어 강제 드로우되었습니다!`
+      });
+
+      broadcastGameState(roomId);
+
+      if (timeoutResult.overResult && timeoutResult.overResult.isOver) {
+        handleGameEnd(roomId, timeoutResult.overResult);
+      }
+    }
+  }, timeLimit);
+
 }
 
 // 게임 종료 처리 공통 헬퍼 함수
 function handleGameEnd(roomId, overResult) {
   const room = rooms[roomId];
   if (!room) return;
+
+  if (room.turnTimer) {
+    clearTimeout(room.turnTimer);
+    room.turnTimer = null;
+  }
 
   const winnerPlayer = room.game ? room.game.playerzone.find(p => p.id === overResult.winner) : null;
   io.to(roomId).emit('gameOver', {
@@ -99,8 +135,18 @@ io.on('connection',(socket) => {
     });
 
     //새 방 만들기 요청
-    socket.on('createRoom', ({ title, playerName }) => {
+    socket.on('createRoom', ({ title, playerName, roomType }) => {
         const newRoomId = String(roomCounter++);
+        const isPrivate = roomType === 'custom';
+
+        let inviteCode =null;
+        if(isPrivate){
+            const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+            do{inviteCode = Array.from({length:6},()=>chars[Math.floor(Math.random() * chars.length)]).join('');
+        }while(Object.values(rooms).some(r => r.inviteCode === inviteCode));
+
+
+        }
 
         // 파라미터로 넘어온 이름보다 소켓 객체에 저장된 최신 이름을 우선 사용 (없으면 파라미터나 기본값)
         const currentName = socket.playerName || playerName || '플레이어';
@@ -117,7 +163,9 @@ io.on('connection',(socket) => {
             hostId: socket.id,
             players: [{ socketId: socket.id, id: 'P1', name: currentName }], // 최신 이름 반영
             spectators: [],
-            isPlaying: false
+            isPlaying: false,
+            isPrivate,
+            inviteCode
         };
 
         socket.currentRoomId = newRoomId;
@@ -169,6 +217,49 @@ io.on('connection',(socket) => {
         io.emit('roomListUpdated',getPublicRoomInfo());
     
     });
+
+    // 초대코드로 입장처리
+    socket.on('joinByInviteCode', ({ code, playerName }) => {
+        const cleanCode = String(code || '').trim().toUpperCase();
+        if (!cleanCode) {
+            return socket.emit('errorMsg', '초대 코드를 입력해주세요.');
+        }
+
+        const room = Object.values(rooms).find(r => r.isPrivate && r.inviteCode === cleanCode);
+        if (!room) {
+            return socket.emit('errorMsg', '유효하지 않은 초대 코드예요.');
+        }
+
+        if (room.isPlaying) {
+            return socket.emit('errorMsg', '이미 게임이 시작된 방이에요.');
+        }
+
+        const total = room.players.length + room.spectators.length;
+        if (total >= MAX_CAPACITY) {
+            return socket.emit('errorMsg', '방이 가득 찼어요.');
+        }
+
+        socket.playerName = playerName || '플레이어';
+
+        let myRole = '';
+        if (room.players.length < MAX_PLAYERS) {
+            myRole = `P${room.players.length + 1}`;
+            room.players.push({ socketId: socket.id, id: myRole, name: socket.playerName });
+        } else {
+            myRole = `관전자${room.spectators.length + 1}`;
+            room.spectators.push({ socketId: socket.id, id: myRole, name: socket.playerName });
+        }
+
+        lobbyUsers = lobbyUsers.filter(u => u.socketId !== socket.id);
+        io.emit('lobbyUsersUpdated', lobbyUsers);
+
+        socket.currentRoomId = room.id;
+        socket.join(room.id);
+
+        socket.emit('joinRoomSuccess', { roomId: room.id, myRole, roomData: room });
+        io.to(room.id).emit('roomStateUpdated', { players: room.players, spectators: room.spectators, hostId: room.hostId });
+    });
+
 
     //대기실에서 로비로 나가기 버튼 처리
     socket.on('leaveRoom',() =>{
@@ -355,6 +446,7 @@ function getPublicRoomInfo() {
     const list = [];
     for (const id in rooms) {
         const r = rooms[id];
+        if(r.isPrivate)continue;
         const validPlayers = r.players.filter(Boolean);
         const host = validPlayers.find(p => p.socketId === r.hostId)|| r.spectators.find(s => s.socketId === r.hostId);
         const totalMembers = validPlayers.length + r.spectators.length;
