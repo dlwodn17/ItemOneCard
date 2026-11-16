@@ -61,7 +61,7 @@ function broadcastGameState(roomId) {
 function handleGameEnd(roomId, overResult) {
   const room = rooms[roomId];
   if (!room) return;
-
+    //타이머 설정
   if (room.turnTimer) {
     clearTimeout(room.turnTimer);
     room.turnTimer = null;
