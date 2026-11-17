@@ -17,6 +17,7 @@ class OneCardGame {
     this.attackstack = 0;
     this.undirection = false; // false: 시계, true: 반시계
     this.currentshape = null;
+    this.turnTimeLimit = 15;
 
     this.init();
   }
@@ -31,6 +32,16 @@ class OneCardGame {
     });
     this.deck.push({ type: 'joker', shape: 'joker', number: 99, jokerType: 'black', name: '흑조커' });
     this.deck.push({ type: 'joker', shape: 'joker', number: 99, jokerType: 'color', name: '컬조커' });
+
+    // 아이템 카드 각 2장씩 추가
+    // 아이템 카드 number는 100번부터 시작
+    for (let i = 0; i < 2; i++) {
+      this.deck.push({ type: 'item', shape: 'item', number: 100, itemType: 'fast_forward', name: '빨리감기' });
+      this.deck.push({ type: 'item', shape: 'item', number: 101, itemType: 'reflect', name: '반사' });
+      this.deck.push({ type: 'item', shape: 'item', number: 102, itemType: 'emergency_escape', name: '긴급탈출' });
+      this.deck.push({ type: 'item', shape: 'item', number: 103, itemType: 'swap', name: '스왑' });
+      this.deck.push({ type: 'item', shape: 'item', number: 104, itemType: 'shuffle_seats', name: '자리바꾸기' });
+    }
   }
 
   shuffle() {
@@ -53,6 +64,7 @@ class OneCardGame {
     this.attackstack = 0;
     this.undirection = false;
     this.currentshape = null;
+    this.turnTimeLimit = 15;
 
     for (const p of this.playerzone) {
       p.hand = [];
@@ -95,6 +107,7 @@ class OneCardGame {
     const overResult = this.gameOver();
     if (overResult.isOver) return { success: true, overResult };
 
+    this.turnTimeLimit = 15;
     this.nextTurn(1);
     return { success: true, timeout: true, targetId: currentPlayer.id };
   }
@@ -117,12 +130,13 @@ class OneCardGame {
     const overResult = this.gameOver();
     if (overResult.isOver) return { success: true, overResult };
 
+    this.turnTimeLimit = 15;
     this.nextTurn(1);
     return { success: true };
   }
 
   // 카드 제출
-  playCard(socketId, cardIndex, newShape) {
+  playCard(socketId, cardIndex, newShape, targetId) {
     const playerIndex = this.playerzone.findIndex(p => p.socketId === socketId);
     if (playerIndex !== this.currentturn) return { success: false, msg: '차례가 아닙니다.' };
     if (this.playerzone[playerIndex].isEliminated) return { success: false, msg: '이미 탈락한 플레이어입니다.' };
@@ -135,17 +149,30 @@ class OneCardGame {
       return { success: false, msg: '낼 수 없는 카드입니다.' };
     }
 
+    let targetIndex = -1;
+    if (card.itemType === 'swap') {
+      targetIndex = this.playerzone.findIndex(p => p.socketId === targetId || p.id === targetId);
+      if (targetIndex === -1 || targetIndex === playerIndex || this.playerzone[targetIndex].isEliminated) {
+        return { success: false, msg: '유효한 교환 대상 플레이어를 선택해주세요.' };
+      }
+    }
+
     player.hand.splice(cardIndex, 1);
     this.submitzoneCards.push(card);
 
-    const turnAction = this.checkSpecialCard(card, newShape);
-    this.checkOneCard(playerIndex);
+    this.turnTimeLimit = 15;
+    const turnAction = this.checkSpecialCard(card, newShape, playerIndex, targetIndex);
+    this.checkOneCard(this.currentturn); // playerIndex -> currentturn
+    // 다른 곳의 playerIndex는 모두 playerzone이 섞이기 전에 사용되거나, 
+    // 배열 순서를 바꾸지 않는 메서드에 있음
 
     const overResult = this.gameOver();
     if (overResult.isOver) return { success: true, overResult };
 
     if (turnAction === 'skip') {
       this.nextTurn(2);
+    } else if (turnAction === 'reflect') {
+      this.nextTurn(1, -1);
     } else if (turnAction !== 'keep_turn') {
       this.nextTurn(1);
     }
@@ -155,11 +182,19 @@ class OneCardGame {
   checkSubmit(card, playerIndex) {
     const topCard = this.submitzoneCards[this.submitzoneCards.length - 1];
     if (this.attackstack > 0) return this.canDefend(card, topCard);
+    if (card.itemType === 'reflect') return false;
     if (card.type === 'joker' || topCard.type === 'joker' || this.currentshape === 'joker') return true;
-    return card.number === topCard.number || card.shape === this.currentshape;s    
+    if (card.type === 'item' || topCard.type === 'item' || this.currentshape === 'item') return true;
+    return card.number === topCard.number || card.shape === this.currentshape;
   }
 
   canDefend(card, topCard) {
+    if (topCard.itemType === 'reflect') {
+      return false; // 일반 방어 불가 (추후 천사카드 등으로만 방어 가능)
+    }
+    if (card.itemType === 'reflect') {
+      return true;
+    }
     if (topCard.number === 2) {
       return card.number === 3 || card.number === 2 || card.number === 1 || card.type === 'joker';
     } else if (topCard.number === 1) {
@@ -170,10 +205,56 @@ class OneCardGame {
     return false;
   }
 
-  checkSpecialCard(card, newShape) {
+  checkSpecialCard(card, newShape, playerIndex, targetIndex) {
     if (card.type === 'joker') {
       this.attackstack += (card.jokerType === 'color') ? 7 : 5;
       this.currentshape = 'joker';
+      return;
+    }
+    if (card.type === 'item') {
+      this.currentshape = 'item';
+      if (card.itemType === 'fast_forward') {
+        this.turnTimeLimit = 5;
+        return;
+      }
+      if (card.itemType === 'reflect') {
+        return 'reflect';
+      }
+      if (card.itemType === 'emergency_escape') {
+        const hand = this.playerzone[playerIndex].hand;
+        const discardCount = Math.floor(hand.length / 2);
+        const discarded = [];
+        for (let i = 0; i < discardCount; i++) {
+          const randIdx = Math.floor(Math.random() * hand.length);
+          discarded.push(hand.splice(randIdx, 1)[0]);
+        }
+        for (let i = discarded.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [discarded[i], discarded[j]] = [discarded[j], discarded[i]];
+        }
+        this.deck.unshift(...discarded);
+        return;
+      }
+      // 이후 server.js에서 스왑 연동을 할 때는
+      // 클라이언트가 보낸 targetId를
+      // room.game.playCard(socket.id, cardIndex, newShape, targetId)로 전달하면 됩니다.
+      if (card.itemType === 'swap') {
+        const player = this.playerzone[playerIndex];
+        const target = this.playerzone[targetIndex];
+        [player.hand, target.hand] = [target.hand, player.hand];
+        this.checkOneCard(targetIndex);
+        return;
+      }
+      // p.id는 그대로 두고 this.playerzone 배열의 순서만 셔플
+      if (card.itemType === 'shuffle_seats') {
+        const currentSocketId = this.playerzone[playerIndex].socketId;
+        for (let i = this.playerzone.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [this.playerzone[i], this.playerzone[j]] = [this.playerzone[j], this.playerzone[i]];
+        }
+        this.currentturn = this.playerzone.findIndex(p => p.socketId === currentSocketId);
+        return;
+      }
       return;
     }
     this.currentshape = card.shape;
@@ -259,13 +340,14 @@ class OneCardGame {
 
     // 퇴장한 플레이어의 턴이었다면 다음 생존 플레이어로 턴 전환
     if (this.currentturn === playerIndex) {
+      this.turnTimeLimit = 15;
       this.nextTurn(1);
     }
     return { success: true, overResult: { isOver: false } };
   }
 
   gameOver() {
-    
+
     for (const p of this.playerzone) {
       if (!p.isEliminated && p.hand.length === 0) {
         return { isOver: true, winner: p.id, reason: 'clear' };
@@ -287,10 +369,10 @@ class OneCardGame {
     return { isOver: false };
   }
 
-  nextTurn(stepCount = 1) {
+  nextTurn(stepCount = 1, direction = 1) {
     if (!this.playerzone.some(p => !p.isEliminated)) return;
     const total = this.playerzone.length;
-    const step = this.undirection ? -1 : 1;
+    const step = (this.undirection ? -1 : 1) * direction;
     let remain = stepCount;
     let nextIdx = this.currentturn;
     while (remain > 0) {
