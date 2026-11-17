@@ -28,6 +28,13 @@ function broadcastGameState(roomId) {
   // 본인 손패(카드 목록)는 해당 소켓에게만 비공개 개별 전송
   room.game.playerzone.forEach(p => {
     io.to(p.socketId).emit('myHandUpdate', p.hand);
+
+    if (p.hiddenRule) {
+      io.to(p.socketId).emit('myHiddenRule', {
+        name: p.hiddenRule.name,
+        desc: p.hiddenRule.desc
+      });
+    }
   });
 
   // 게임이 진행 중이고 오버가 아니라면 타이머 구동 (turnTimeLimit * 1000 밀리초)
@@ -165,7 +172,13 @@ io.on('connection',(socket) => {
             spectators: [],
             isPlaying: false,
             isPrivate,
-            inviteCode
+            inviteCode,
+            customRules: {
+                turnTimeLimit: 15,
+                startingHandCount: 7,
+                bankruptcyLimit: 15,
+                enableHiddenRules: false
+            }
         };
 
         socket.currentRoomId = newRoomId;
@@ -173,6 +186,36 @@ io.on('connection',(socket) => {
 
         socket.emit('joinRoomSuccess', { roomId: newRoomId, myRole: 'P1', roomData: rooms[newRoomId] });
         io.emit('roomListUpdated', getPublicRoomInfo());
+    });
+
+    // 방장 규칙 변경 요청 처리
+    socket.on('updateRoomRules', (rules) => {
+        const roomId = socket.currentRoomId;
+        if (!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
+
+        if (!room.isPrivate || room.hostId !== socket.id) {
+            return socket.emit('errorMsg', '커스텀 방의 방장만 규칙을 변경할 수 있어요.');
+        }
+
+        room.customRules = {
+            turnTimeLimit: Math.min(60, Math.max(5, Number(rules.turnTimeLimit) || 15)),
+            startingHandCount: Math.min(10, Math.max(5, Number(rules.startingHandCount) || 7)),
+            bankruptcyLimit: Math.min(30, Math.max(10, Number(rules.bankruptcyLimit) || 15)),
+            enableHiddenRules: Boolean(rules.enableHiddenRules)
+        };
+
+        io.to(roomId).emit('roomRulesUpdated', room.customRules);
+
+        // 변경된 상세 규칙을 포함한 메시지 생성
+        const r = room.customRules;
+        const ruleDetails = `턴 제한: ${r.turnTimeLimit}초 | 시작 손패: ${r.startingHandCount}장 | 파산 기준: ${r.bankruptcyLimit}장 | 히든 룰: ${r.enableHiddenRules ? 'ON' : 'OFF'}`;
+        io.to(roomId).emit('receiveChat', {
+            scope: 'room',
+            time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+            name: '시스템',
+            message: `방장이 게임 규칙을 변경했습니다. [ ${ruleDetails} ]`
+        });
     });
 
     //기존 방 입장하기 요청
@@ -198,7 +241,7 @@ io.on('connection',(socket) => {
 
         let myRole ='';
 
-        // 먼저온 4명에게 플레ㄹ어, 나머지 2명 관전자 부여
+        // 먼저온 4명에게 플레이어, 나머지 2명 관전자 부여
         if(room.players.length < MAX_PLAYERS){
             myRole =`P${room.players.length + 1}`;
             room.players.push({socketId:socket.id,id:myRole,name: playerName || '플레이어'});
@@ -301,7 +344,7 @@ io.on('connection',(socket) => {
         }
 
         room.isPlaying = true;
-        room.game = new OneCardGame(room.players);
+        room.game = new OneCardGame(room.players,room.customRules);
 
         //게임 시작시 전달 정보
         io.to(roomId).emit('gameStart', {
@@ -579,3 +622,4 @@ function processUserExit(socket){
 server.listen(3000, () => {
     console.log('서버가 3000번 포트에서 실행 중입니다.');
 });
+  

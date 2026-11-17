@@ -1,6 +1,97 @@
 // back.js (Node.js CommonJS 기준)
+
+//커스텀 히든 룰
+const HIDDEN_RULES_POOL = [
+  {
+    id: 'FOUR_SEVENS',
+    name: '럭키 세븐',
+    desc: '숫자 7 카드 4장 모으기 (달성 즉시 승리)',
+    timing: 'instant',
+    check: p => p.hand.filter(c => c.number === 7).length >= 4
+  },
+  {
+    id: 'ROYAL_FAMILY',
+    name: '로열 패밀리',
+    desc: '종료 시 모든 패가 K, Q, J로만 구성',
+    timing: 'endgame',
+    check: p => p.hand.length > 0 && p.hand.every(c => [11, 12, 13].includes(c.number))
+  },
+  {
+    id: 'STRAIGHT',
+    name: '스트레이트',
+    desc: '종료 시 모든 패가 연속된 숫자로 구성 (패 5장 이상)',
+    timing: 'endgame',
+    check: p => {
+      if (p.hand.length < 5 || p.hand.some(c => c.number === 99)) return false;
+      const nums = p.hand.map(c => c.number).sort((a, b) => a - b);
+      for (let i = 0; i < nums.length - 1; i++) {
+        if (nums[i + 1] !== nums[i] + 1) return false;
+      }
+      return true;
+    }
+  },
+  {
+    id: 'HIGH_RISK',
+    name: '하이 리턴 하이 리스크',
+    desc: '종료 시까지 패 10장 이상 유지 (10장 달성 후 감소 시 실패)',
+    timing: 'endgame',
+    check: p => Boolean(p.everReachedTen && p.hand.length >= 10)
+  },
+  {
+    id: 'RED_BLACK',
+    name: 'RED OR BLACK',
+    desc: '종료 시 모든 패 색상(올 레드/올 블랙) 통일 (패 5장 이상)',
+    timing: 'endgame',
+    check: p => {
+      if (p.hand.length < 5) return false;
+      const isRed = c => ['heart', 'diamond'].includes(c.shape) || c.jokerType === 'color';
+      const isBlack = c => ['spade', 'clover'].includes(c.shape) || c.jokerType === 'black';
+      return p.hand.every(isRed) || p.hand.every(isBlack);
+    }
+  },
+  {
+    id: 'PACIFIST',
+    name: '평화주의자',
+    desc: '종료 시 조커, 1, 2, 7, J, Q, K를 제외한 카드만 보유',
+    timing: 'endgame',
+    check: p => {
+      if (p.hand.length === 0) return false;
+      const excluded = [1, 2, 7, 11, 12, 13, 99];
+      return p.hand.every(c => !excluded.includes(c.number));
+    }
+  },
+  {
+    id: 'SPECIALIST',
+    name: '스페셜리스트',
+    desc: '조커, 1, 2, 7, J, Q, K를 모두 1장씩 보유 (달성 즉시 승리)',
+    timing: 'instant',
+    check: p => {
+      const reqs = [1, 2, 7, 11, 12, 13, 99];
+      return reqs.every(r => p.hand.some(c => c.number === r));
+    }
+  },
+  {
+    id: 'PROPHET',
+    name: '예언가',
+    desc: '지목한 플레이어가 원카드 선언에 성공하면 즉시 승리',
+    timing: 'trigger'
+  }
+];
+
+
 class OneCardGame {
-  constructor(playerList) {
+  constructor(playerList,customRules={}) {
+    
+    this.customRules = {
+      turnTimeLimit: customRules.turnTimeLimit || 15,
+      startingHandCount: customRules.startingHandCount || 7,
+      bankruptcyLimit: customRules.bankruptcyLimit || 15,
+      enableHiddenRules: Boolean(customRules.enableHiddenRules)
+    };
+
+    this.turnTimeLimit = this.customRules.turnTimeLimit;
+
+
     this.playerzone = playerList.map((p, idx) => ({
       socketId: p.socketId,
       id: `P${idx + 1}`,
@@ -59,6 +150,10 @@ class OneCardGame {
       p.onecard = false;
       p.onecardCalled = false;
       p.isEliminated = false;
+      p.hiddenRule = null;
+      p.everReachedTen = false;
+      p.prophetTargetSocketId = null;
+      p.prophetTargetName = null;
     }
 
     this.createCard();
@@ -69,12 +164,59 @@ class OneCardGame {
     this.submitzoneCards.push(initialCard);
     this.currentshape = initialCard.shape;
 
+    const handCount = this.customRules.startingHandCount;
     // 참가자들에게 7장씩 지급
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < handCount; i++) {
       for (const p of this.playerzone) {
         if (this.deck.length > 0) p.hand.push(this.deck.pop());
       }
     }
+
+    // 히든 룰 배정 (체크박스 활성화 시)
+    if (this.customRules.enableHiddenRules) {
+      const shuffled = [...HIDDEN_RULES_POOL].sort(() => Math.random() - 0.5);
+      this.playerzone.forEach((p, idx) => {
+        const rule = shuffled[idx % shuffled.length];
+        p.hiddenRule = { ...rule };
+
+        // 하이 리턴 하이 리스크 초기 상태 체크
+        if (p.hand.length >= 10) p.everReachedTen = true;
+
+        // 예언가인 경우 본인 제외 랜덤 타겟 지정
+        if (rule.id === 'PROPHET') {
+          const others = this.playerzone.filter(other => other.socketId !== p.socketId);
+          if (others.length > 0) {
+            const target = others[Math.floor(Math.random() * others.length)];
+            p.prophetTargetSocketId = target.socketId;
+            p.prophetTargetName = target.name;
+            p.hiddenRule.desc = `[${target.name}]님이 원카드 선언에 성공하면 즉시 승리`;
+          }
+        }
+      });
+    }
+  }
+
+  // 패 변동 시 상태 추적 및 1, 7번 즉시 승리 판별
+  onHandChanged(player) {
+    if (!this.customRules.enableHiddenRules || !player || player.isEliminated) return null;
+
+    if (player.hand.length >= 10) {
+      player.everReachedTen = true;
+    }
+
+    if (player.hiddenRule && player.hiddenRule.timing === 'instant') {
+      if (player.hiddenRule.check(player)) {
+        return {
+          isOver: true,
+          winner: player.id,
+          winnerName: player.name,
+          reason: 'hidden',
+          hiddenRuleName: player.hiddenRule.name,
+          hiddenRuleDesc: player.hiddenRule.desc
+        };
+      }
+    }
+    return null;
   }
 
   // 시간 초과 시 강제 드로우 및 턴 넘김 처리 함수 추가
@@ -156,7 +298,7 @@ class OneCardGame {
     const topCard = this.submitzoneCards[this.submitzoneCards.length - 1];
     if (this.attackstack > 0) return this.canDefend(card, topCard);
     if (card.type === 'joker' || topCard.type === 'joker' || this.currentshape === 'joker') return true;
-    return card.number === topCard.number || card.shape === this.currentshape;s    
+    return card.number === topCard.number || card.shape === this.currentshape;
   }
 
   canDefend(card, topCard) {
@@ -215,6 +357,26 @@ class OneCardGame {
     // 1) 본인 패가 1장일 때 먼저 외친 경우 -> 방어 성공
     if (caller.onecard && !caller.onecardCalled) {
       caller.onecardCalled = true;
+      if (this.customRules.enableHiddenRules) {
+        const prophet = this.playerzone.find(
+          p => !p.isEliminated && p.hiddenRule?.id === 'PROPHET' && p.prophetTargetSocketId === caller.socketId
+        );
+        if (prophet) {
+          return {
+            success: true,
+            type: 'defend',
+            callerId: caller.id,
+            overResult: {
+              isOver: true,
+              winner: prophet.id,
+              winnerName: prophet.name,
+              reason: 'hidden',
+              hiddenRuleName: prophet.hiddenRule.name,
+              hiddenRuleDesc: `${caller.name}님의 원카드 선언 적중!`
+            }
+          };
+        }
+      }
       return { success: true, type: 'defend', callerId: caller.id };
     }
 
@@ -264,6 +426,27 @@ class OneCardGame {
     return { success: true, overResult: { isOver: false } };
   }
 
+  // 종료 시점 히든 룰(2~6번) 우선 판별 헬퍼
+  resolveEndGameResult(defaultResult) {
+    if (this.customRules.enableHiddenRules) {
+      for (const p of this.playerzone) {
+        if (!p.isEliminated && p.hiddenRule && p.hiddenRule.timing === 'endgame') {
+          if (p.hiddenRule.check(p)) {
+            return {
+              isOver: true,
+              winner: p.id,
+              winnerName: p.name,
+              reason: 'hidden',
+              hiddenRuleName: p.hiddenRule.name,
+              hiddenRuleDesc: p.hiddenRule.desc
+            };
+          }
+        }
+      }
+    }
+    return defaultResult;
+  }
+
   gameOver() {
     
     for (const p of this.playerzone) {
@@ -272,8 +455,9 @@ class OneCardGame {
       }
     }
     // 15장 이상 파산 처리
+    const bankruptcyLimit = this.customRules.bankruptcyLimit;
     for (const p of this.playerzone) {
-      if (!p.isEliminated && p.hand.length >= 15) {
+      if (!p.isEliminated && p.hand.length >= bankruptcyLimit) {
         p.isEliminated = true;
         p.onecard = false;
         p.onecardCalled = false;
@@ -282,8 +466,12 @@ class OneCardGame {
       }
     }
     const survivors = this.playerzone.filter(p => !p.isEliminated);
-    if (survivors.length === 1) return { isOver: true, winner: survivors[0].id, reason: 'last' };
-    if (survivors.length === 0) return { isOver: true, winner: null, reason: 'draw' };
+    if (survivors.length === 1) {
+      return this.resolveEndGameResult({ isOver: true, winner: survivors[0].id, reason: 'last' });
+    }
+    if (survivors.length === 0) {
+      return this.resolveEndGameResult({ isOver: true, winner: null, reason: 'draw' });
+    }
     return { isOver: false };
   }
 
