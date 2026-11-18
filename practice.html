@@ -593,6 +593,59 @@
         #reset-rules {
             margin-right: auto;
         }
+
+        .hidden-rule-toggle {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        #rule-hidden-enabled {
+            width: 20px;
+            height: 20px;
+            accent-color: var(--blue);
+        }
+
+        #hidden-rule-dialog {
+            width: min(460px, calc(100% - 32px));
+        }
+
+        #hidden-rule-title {
+            margin: 16px 0 10px;
+            color: var(--blue);
+            font-size: 21px;
+        }
+
+        #hidden-rule-description {
+            line-height: 1.8;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        #confirm-hidden-rule {
+            width: 100%;
+            margin-top: 24px;
+        }
+
+        .game-result-reason {
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px solid var(--line);
+            color: var(--ink);
+            font-size: 13px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .hidden-rule-section {
+            margin-top: 20px;
+            padding-top: 18px;
+            border-top: 1px solid var(--line);
+        }
     </style>
 </head>
 <body>
@@ -714,6 +767,8 @@
                 <section data-screen="game" hidden aria-labelledby="game-title">
                     <div class="screen-heading game-heading">
                         <h1 id="game-title" tabindex="-1">게임 진행 중</h1>
+                        <button class="button" id="open-hidden-rule"
+                            type="button" hidden>내 히든 조건</button>
                         <button class="button" id="game-leave" type="button">← 로비로</button>
                     </div>
                     <div class="game-layout">
@@ -838,7 +893,7 @@
         </div>
     </dialog>
 
-    /*결과창 HTML*/
+    <!-- 결과창 HTML -->
     <dialog
         id="game-result-dialog"
         aria-labelledby="game-result-title"
@@ -851,6 +906,7 @@
 
         <p id="game-result-winner"></p>
         <p id="game-result-description"></p>
+        <p id="game-result-reason" class="game-result-reason" hidden></p>
 
         <button
             class="button primary"
@@ -862,7 +918,7 @@
         </button>
     </dialog>
 
-    /* 규칙 변경창 HTML */
+    <!-- 규칙 변경창 HTML -->
     <dialog id="rules-dialog" aria-labelledby="rules-title">
         <div class="dialog-heading">
             <h2 id="rules-title">규칙 변경</h2>
@@ -907,6 +963,18 @@
                     </p>
                 </div>
             </div>
+
+            <div class="hidden-rule-section">
+                <label class="hidden-rule-toggle" for="rule-hidden-enabled">
+                    <span>히든 룰 사용</span>
+                    <input id="rule-hidden-enabled" type="checkbox">
+                </label>
+            
+                <p class="muted">
+                    각자 다른 비밀 승리조건을 받아요.
+                    히든 승리는 기본 승리조건보다 먼저 판정해요.
+                </p>
+            </div>
     
             <p class="error" id="rules-error" role="alert" hidden></p>
     
@@ -916,6 +984,22 @@
                 <button class="button primary" id="apply-rules" type="submit">적용</button>
             </div>
         </form>
+    </dialog>
+
+    <!-- 히든 승리조건 확인창 -->
+    <dialog id="hidden-rule-dialog" aria-labelledby="hidden-rule-heading">
+        <div class="dialog-heading">
+            <h2 id="hidden-rule-heading">나의 히든 승리조건</h2>
+            <button class="close-button" id="close-hidden-rule"
+                type="button" aria-label="닫기">×</button>
+        </div>
+
+        <p class="muted">이 조건은 나에게만 보입니다.</p>
+        <h3 id="hidden-rule-title"></h3>
+        <p id="hidden-rule-description"></p>
+
+        <button class="button primary" id="confirm-hidden-rule"
+            type="button">확인</button>
     </dialog>
     
     <script src="/socket.io/socket.io.js"></script>
@@ -1158,6 +1242,9 @@
                         values[input.name] = input.valueAsNumber;
                     });
 
+                    values.hiddenRulesEnabled =
+                        $('rule-hidden-enabled').checked;
+
                     return values;
                 }
 
@@ -1219,6 +1306,11 @@
                         });
                     }
 
+                    // 현재는 이 페이지에서 적용했던 체크 상태를 불러옴
+                    // TODO(서버 담당): 서버의 확정 설정을 받으면 그 값을 표시해줘야함
+                    $('rule-hidden-enabled').checked =
+                        saved?.hiddenRulesEnabled === true;
+
                     updateRulesPreview();
                     rulesDialog.showModal();
                 });
@@ -1263,6 +1355,10 @@
                     // 여기서 규칙 저장 요청을 전송하고 서버가 권한과 값을 검증함.
                     // 이후 방 전체에 확정 설정을 전달하도록 연결해야함
                     // 실제 타이머, 시작 손패 수, 파산 판정은 서버/게임 엔진에서 적용.
+
+                    // TODO(서버 담당): 여기서 readRules()의 설정을 서버에 저장해야함
+                    // hiddenRulesEnabled가 히든 룰 사용 여부.
+                    // 아래 Map 저장은 UI 확인용이며 실제 게임 규칙에 반영하지 않음
                     localRulesByRoom.set(editingRoomId, readRules());
 
                     rulesDialog.close();
@@ -2167,6 +2263,147 @@
     function escapeHtml(text) {
         return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
+
+    (() => {
+            const dialog = $('hidden-rule-dialog');
+            const openButton = $('open-hidden-rule');
+            const gameScreen = document.querySelector('[data-screen="game"]');
+            let myHiddenRule = null;
+
+            function openHiddenRulePopup() {
+                if (!myHiddenRule || gameScreen.hidden) return;
+
+                $('hidden-rule-title').textContent = myHiddenRule.title;
+                $('hidden-rule-description').textContent =
+                    myHiddenRule.description;
+
+                if (!dialog.open) dialog.showModal();
+            }
+
+            window.clearMyHiddenRule = function () {
+                myHiddenRule = null;
+                openButton.hidden = true;
+
+                $('hidden-rule-title').textContent = '';
+                $('hidden-rule-description').textContent = '';
+
+                if (dialog.open) dialog.close();
+            };
+
+            window.setMyHiddenRule = function (rule) {
+                if (!rule || typeof rule.title !== 'string'
+                    || typeof rule.description !== 'string') {
+                    window.clearMyHiddenRule();
+                    return;
+                }
+
+                myHiddenRule = {
+                    title: rule.title,
+                    description: rule.description
+                };
+
+                openButton.hidden = false;
+                openHiddenRulePopup();
+            };
+
+            openButton.addEventListener('click', event => {
+                event.stopPropagation();
+                openHiddenRulePopup();
+            });
+
+            dialog.addEventListener('click', event => {
+                event.stopPropagation();
+            });
+
+            $('close-hidden-rule').addEventListener('click', () => {
+                dialog.close();
+            });
+
+            $('confirm-hidden-rule').addEventListener('click', () => {
+                dialog.close();
+            });
+
+            // 게임 화면에서 나가면 조건 표시를 정리합니다.
+            // 화면 변화를 감지하는 UI 처리이며 통신 코드는 아닙니다.
+            let wasInGame = !gameScreen.hidden;
+
+            new MutationObserver(() => {
+                const isInGame = !gameScreen.hidden;
+
+                if (wasInGame && !isInGame) {
+                    window.clearMyHiddenRule();
+                }
+
+                if (!wasInGame && isInGame) {
+                    openHiddenRulePopup();
+                }
+
+                wasInGame = isInGame;
+            }).observe(gameScreen, {
+                attributes: true,
+                attributeFilter: ['hidden']
+            });
+
+            /*
+             * TODO(서버 담당 연결 지점)
+             *
+             * 게임 시작 시:
+             * clearMyHiddenRule()
+             *
+             * 본인에게 배정된 조건을 수신했을 때:
+             * setMyHiddenRule(rule)
+             *
+             * 종료/퇴장/접속 해제 시:
+             * clearMyHiddenRule()
+             *
+             * rule은 본인의 { title, description }임.
+             * 무작위 배정과 승리 판정은 서버에서 수행
+             */
+        })();
+
+        (() => {
+                const reasonElement = $('game-result-reason');
+
+                window.renderVictoryReason = function ({
+                    reason, hiddenRuleTitle, victoryReason
+                } = {}) {
+                    const defaults = {
+                        clear: '모든 카드를 내려놓았습니다.',
+                        last: '마지막까지 생존했습니다.',
+                        hidden: '히든 승리조건을 달성했습니다.'
+                    };
+
+                    const text = reason === 'hidden'
+                        ? ([hiddenRuleTitle, victoryReason]
+                            .filter(Boolean)
+                            .join(' — ') || defaults.hidden)
+                        : (victoryReason || defaults[reason] || '');
+
+                    reasonElement.textContent =
+                        text ? '승리 이유: ' + text : '';
+
+                    reasonElement.hidden = !text;
+                };
+
+                $('game-result-dialog').addEventListener('close', () => {
+                    window.renderVictoryReason();
+                });
+
+                /*
+                 * TODO(서버 담당 연결 지점)
+                 *
+                 * 기존 게임 종료 처리에서 확정된 승리 데이터를 받은 뒤:
+                 * renderVictoryReason(data)
+                 *
+                 * data의 형태:
+                 * { reason, hiddenRuleTitle, victoryReason }
+                 *
+                 * 새 판을 준비할 때는:
+                 * renderVictoryReason()
+                 *
+                 * 이 함수는 받은 승리 이유를 표시할 뿐 승리 여부를 판정하지 않음
+                 */
+            })();
     </script>
 </body>
 </html>
