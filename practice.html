@@ -246,7 +246,7 @@
         .card-rank { position: absolute; top: 5px; left: 7px; font-size: 17px; font-weight: 800; }
         .card-rank-bottom { position: absolute; right: 7px; bottom: 4px; font-size: 17px; font-weight: 800; transform: rotate(180deg); }
         .card-red { color: #c25e64; }
-        .my-hand { display: flex; align-items: flex-end; justify-content: flex-start; gap: 5px; max-width: min(445px, 100%);; width: max-content; margin: auto; min-height: auto; padding: 14px 10px 12px; overflow-x: auto; }
+        .my-hand { display: flex; align-items: flex-end; justify-content: flex-start; gap: 5px; max-width: 100%; width: max-content; margin: auto; min-height: auto; padding: 14px 10px 12px; overflow-x: auto; }
         .hand-card { position: relative; flex: 0 0 66px; height: 98px; display: grid; place-items: center; padding: 0; border: 1px solid #c2d4e1; border-radius: 8px; background: #fff; color: #29445d; box-shadow: 0 4px 8px #203b5721; transition: transform .18s, box-shadow .18s; }
         .hand-card .card-suit { font-size: 30px; }
         .hand-card.card-red { color: #c25e64; }
@@ -593,6 +593,78 @@
         #reset-rules {
             margin-right: auto;
         }
+
+        .hidden-rule-toggle {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        #rule-hidden-enabled {
+            width: 20px;
+            height: 20px;
+            accent-color: var(--blue);
+        }
+
+        #hidden-rule-dialog {
+            width: min(460px, calc(100% - 32px));
+        }
+
+        #hidden-rule-title {
+            margin: 16px 0 10px;
+            color: var(--blue);
+            font-size: 21px;
+        }
+
+        #hidden-rule-description {
+            line-height: 1.8;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        #confirm-hidden-rule {
+            width: 100%;
+            margin-top: 24px;
+        }
+
+        .game-result-reason {
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px solid var(--line);
+            color: var(--ink);
+            font-size: 13px;
+            line-height: 1.7;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .hidden-rule-section {
+            margin-top: 20px;
+            padding-top: 18px;
+            border-top: 1px solid var(--line);
+        }
+        /*초대코드강조*/
+        .invite-code-line {
+            display: inline-flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 4px;
+        }
+        .invite-code-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 6px;
+            background: var(--sky);
+            color: var(--blue);
+            font-weight: 800;
+            letter-spacing: 1px;
+            font-variant-numeric: tabular-nums;
+        }
+    
     </style>
 </head>
 <body>
@@ -714,7 +786,10 @@
                 <section data-screen="game" hidden aria-labelledby="game-title">
                     <div class="screen-heading game-heading">
                         <h1 id="game-title" tabindex="-1">게임 진행 중</h1>
-                        <button class="button" id="game-leave" type="button">← 로비로</button>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <button class="button primary" id="open-hidden-rule"type="button" hidden>내 히든 조건</button>
+                            <button class="button" id="game-leave" type="button">← 로비로</button>
+                        </div>
                     </div>
                     <div class="game-layout">
                         <div>
@@ -837,8 +912,23 @@
             <button class="button" type="button" data-shape="clover">♣ 클로버</button>
         </div>
     </dialog>
+    <!--히든룰 표시-->
+    <dialog id="hidden-rule-dialog" aria-labelledby="hidden-rule-dialog-title">
+        <div class="dialog-heading">
+            <h2 id="hidden-rule-dialog-title">내 히든 조건</h2>
+            <button class="close-button" id="close-hidden-rule-dialog" type="button" aria-label="닫기">×</button>
+        </div>
+        <p id="hidden-rule-dialog-name" style="font-weight: 700; font-size: 16px; margin-bottom: 8px;"></p>
+        <p id="hidden-rule-dialog-desc" class="muted"></p>
+        <div id="hidden-rule-prophet-area" style="margin-top: 14px;" hidden>
+            <p style="font-weight: 700; font-size: 13px; margin-bottom: 8px;">지목 대상 선택 (원카드를 먼저 외칠 대상)</p>
+            <div id="hidden-rule-prophet-targets" style="display: grid; gap: 6px;"></div>
+        </div>
+        <p id="hidden-rule-target-status" style="margin-top: 10px; font-weight: 700; color: var(--blue);" hidden></p>
+        <button class="button primary dialog-submit" id="confirm-hidden-rule-dialog" type="button" style="margin-top: 24px">확인</button>
+    </dialog>
 
-    <!--결과창 HTML-->
+    <!-- 결과창 HTML -->
     <dialog
         id="game-result-dialog"
         aria-labelledby="game-result-title"
@@ -851,6 +941,7 @@
 
         <p id="game-result-winner"></p>
         <p id="game-result-description"></p>
+        <p id="game-result-reason" class="game-result-reason" hidden></p>
 
         <button
             class="button primary"
@@ -862,7 +953,7 @@
         </button>
     </dialog>
 
-    <!--규칙 변경창 HTML-->
+    <!-- 규칙 변경창 HTML -->
     <dialog id="rules-dialog" aria-labelledby="rules-title">
         <div class="dialog-heading">
             <h2 id="rules-title">규칙 변경</h2>
@@ -907,6 +998,18 @@
                     </p>
                 </div>
             </div>
+
+            <div class="hidden-rule-section">
+                <label class="hidden-rule-toggle" for="rule-hidden-enabled">
+                    <span>히든 룰 사용</span>
+                    <input id="rule-hidden-enabled" type="checkbox">
+                </label>
+            
+                <p class="muted">
+                    각자 다른 비밀 승리조건을 받아요.
+                    히든 승리는 기본 승리조건보다 먼저 판정해요.
+                </p>
+            </div>
     
             <p class="error" id="rules-error" role="alert" hidden></p>
     
@@ -916,6 +1019,22 @@
                 <button class="button primary" id="apply-rules" type="submit">적용</button>
             </div>
         </form>
+    </dialog>
+
+    <!-- 히든 승리조건 확인창 -->
+    <dialog id="hidden-rule-dialog" aria-labelledby="hidden-rule-heading">
+        <div class="dialog-heading">
+            <h2 id="hidden-rule-heading">나의 히든 승리조건</h2>
+            <button class="close-button" id="close-hidden-rule"
+                type="button" aria-label="닫기">×</button>
+        </div>
+
+        <p class="muted">이 조건은 나에게만 보입니다.</p>
+        <h3 id="hidden-rule-title"></h3>
+        <p id="hidden-rule-description"></p>
+
+        <button class="button primary" id="confirm-hidden-rule"
+            type="button">확인</button>
     </dialog>
     
     <script src="/socket.io/socket.io.js"></script>
@@ -1061,9 +1180,16 @@
             const room = state.currentRoom;
             if (!room) return;
             $('waiting-title').textContent = room.title;
-            $('waiting-number').textContent = room.isPrivate && room.inviteCode 
-                ? `커스텀 방 · 초대 코드: ${room.inviteCode}` 
-                : `ROOM ${room.id}`;
+           
+            if (room.isPrivate && room.inviteCode) {
+                $('waiting-number').innerHTML = `
+                    <span class="invite-code-line">
+                        <span class="muted">커스텀 방 · 초대 코드</span>
+                        <strong class="invite-code-badge" id="invite-code-value">${escapeHTML(room.inviteCode)}</strong>
+                    </span>`;
+            } else {
+                $('waiting-number').textContent = `ROOM ${room.id}`;
+            }
             
             const players = room.players || [];
             const spectators = room.spectators || [];
@@ -1158,6 +1284,9 @@
                         values[input.name] = input.valueAsNumber;
                     });
 
+                    values.hiddenRulesEnabled =
+                        $('rule-hidden-enabled').checked;
+
                     return values;
                 }
 
@@ -1209,7 +1338,7 @@
                     rulesForm.reset();
 
                     // 이 방에서 이미 적용한 값이 있으면 불러온다.
-                    const saved = localRulesByRoom.get(editingRoomId);
+                    const saved = localRulesByRoom.get(editingRoomId) || state.currentRoom.customRules;
 
                     if (saved) {
                         ruleInputs.forEach(input => {
@@ -1219,6 +1348,11 @@
                         });
                     }
 
+                    const hiddenChk = document.getElementById('rule-hidden-enabled');
+                    if (hiddenChk && saved.enableHiddenRules !== undefined) {
+                        hiddenChk.checked = Boolean(saved.enableHiddenRules);
+                    }
+                    
                     updateRulesPreview();
                     rulesDialog.showModal();
                 });
@@ -1263,7 +1397,11 @@
                     // 여기서 규칙 저장 요청을 전송하고 서버가 권한과 값을 검증함.
                     // 이후 방 전체에 확정 설정을 전달하도록 연결해야함
                     // 실제 타이머, 시작 손패 수, 파산 판정은 서버/게임 엔진에서 적용.
-                    //localRulesByRoom.set(editingRoomId, readRules());
+
+                    // TODO(서버 담당): 여기서 readRules()의 설정을 서버에 저장해야함
+                    // hiddenRulesEnabled가 히든 룰 사용 여부.
+                    // 아래 Map 저장은 UI 확인용이며 실제 게임 규칙에 반영하지 않음
+                    localRulesByRoom.set(editingRoomId, readRules());
                     socket.emit('updateRoomRules', readRules());
 
                     rulesDialog.close();
@@ -1309,17 +1447,94 @@
             }
         });
 
-        //규칙 변경 수신
-        socket.on('roomRulesUpdated', (customRules) => {
-            if (state.currentRoom) {
-                state.currentRoom.customRules = customRules;
-                // 필요하다면 대기실 화면에 변경된 규칙 텍스트 갱신 함수 호출
-            }
-        });
-
         // 에러 메시지 수신 시
         socket.on('errorMsg', (msg) => {
             alert(msg);
+        });
+
+        
+        let latestHiddenRule = null;
+
+        function renderHiddenRuleModal() {
+            const dialog = document.getElementById('hidden-rule-dialog');
+            const nameEl = document.getElementById('hidden-rule-dialog-name');
+            const descEl = document.getElementById('hidden-rule-dialog-desc');
+            const prophetArea = document.getElementById('hidden-rule-prophet-area');
+            const targetsEl = document.getElementById('hidden-rule-prophet-targets');
+            const statusEl = document.getElementById('hidden-rule-target-status');
+            if (!dialog || !nameEl || !descEl || !latestHiddenRule) return;
+
+            nameEl.textContent = latestHiddenRule.name || '';
+            descEl.textContent = latestHiddenRule.desc || '';
+
+            if (statusEl) {
+                if (latestHiddenRule.targetId) {
+                    statusEl.textContent = `현재 지목 대상: ${latestHiddenRule.targetId}`;
+                    statusEl.hidden = false;
+                } else {
+                    statusEl.textContent = '';
+                    statusEl.hidden = true;
+                }
+            }
+
+            const players = state.currentRoom?.players || [];
+            const candidates = players.filter(p => p && p.socketId !== socket.id && !p.isEliminated);
+
+            if (prophetArea && targetsEl) {
+                if (latestHiddenRule.id === 'PROPHET' && !latestHiddenRule.targetId && candidates.length > 0) {
+                    targetsEl.replaceChildren();
+                    candidates.forEach(target => {
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.className = 'button';
+                        btn.textContent = `${target.name} (${target.id})`;
+                        btn.addEventListener('click', () => {
+                            socket.emit('setHiddenRuleTarget', { targetId: target.id });
+                        });
+                        targetsEl.append(btn);
+                    });
+                    prophetArea.hidden = false;
+                } else {
+                    prophetArea.hidden = true;
+                }
+            }
+
+            if (!dialog.open) {
+                dialog.showModal();
+            }
+        }
+        document.getElementById('open-hidden-rule')?.addEventListener('click', () => {
+            if (latestHiddenRule && latestHiddenRule.name) {
+                renderHiddenRuleModal();
+            }
+        });
+
+        document.getElementById('close-hidden-rule-dialog')?.addEventListener('click', () => {
+            document.getElementById('hidden-rule-dialog')?.close();
+        });
+
+        document.getElementById('confirm-hidden-rule-dialog')?.addEventListener('click', () => {
+            document.getElementById('hidden-rule-dialog')?.close();
+        });
+
+        socket.on('myHiddenRule', (rule) => {
+            latestHiddenRule = rule || null;
+            const openBtn = document.getElementById('open-hidden-rule');
+
+             if (openBtn) {
+                openBtn.hidden = !latestHiddenRule;
+            }
+
+            if (!latestHiddenRule) {
+                const dialog = document.getElementById('hidden-rule-dialog');
+                if (dialog && dialog.open) dialog.close();
+                return;
+            }
+
+            if (document.getElementById('hidden-rule-dialog')?.open) {
+                renderHiddenRuleModal();
+            }
+            
         });
 
         // 버튼 이벤트 리스너 연결
@@ -1610,7 +1825,17 @@
                     return false;
                 }
 
-                if (card.type === 'joker' || topCard.type === 'joker' || pub.currentShape === 'joker') return true;
+               if (card.itemType === 'reflect') return false;
+               if (
+                card.type === 'joker' ||
+                topCard.type === 'joker' ||
+                pub.currentShape === 'joker' ||
+                card.type === 'item' ||
+                topCard.type === 'item' ||
+                 pub.currentShape === 'item'
+                ) {
+                    return true;
+                }
                 return card.number === topCard.number || card.shape === pub.currentShape;
             }
 
@@ -1726,6 +1951,45 @@
                 if (!ui.game || !isPlayer()) return;
                 socket.emit('callOneCard');
             });
+            function syncHiddenRuleTargetButtons(rule) {
+                const box = $('hidden-rule-box');
+                if (!box) return;
+
+                let wrap = $('hidden-rule-target-wrap');
+                if (!wrap) {
+                    wrap = document.createElement('div');
+                    wrap.id = 'hidden-rule-target-wrap';
+                    wrap.style.marginTop = '8px';
+                    box.appendChild(wrap);
+                }
+
+                if (!rule || rule.id !== 'PROPHET') {
+                    wrap.hidden = true;
+                    wrap.innerHTML = '';
+                    return;
+                }
+
+                const players = ui.game?.publicState?.players || state.currentRoom?.players || [];
+                const targets = players.filter(p => p && p.socketId && p.socketId !== socket.id && !p.isEliminated);
+                const selectedTarget = rule.targetId || '';
+
+                wrap.hidden = false;
+                wrap.innerHTML = `
+                    <div style="font-size: 11px; color: var(--muted); margin-bottom: 4px;">예언 대상 지목:</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+                        ${targets.map(t => {
+                            const isSelected = selectedTarget === t.id || selectedTarget === t.socketId;
+                            return `<button type="button" class="button ${isSelected ? 'primary' : ''}" data-prophet-target="${escapeHTML(t.id)}" style="padding: 3px 8px; font-size: 11px;">${escapeHTML(t.name)}</button>`;
+                        }).join('')}
+                    </div>
+                `;
+
+                wrap.querySelectorAll('[data-prophet-target]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        socket.emit('setHiddenRuleTarget', { targetId: btn.dataset.prophetTarget });
+                    });
+                });
+            }
             function renderGamePlayers(played = false) {
                 const room = state.currentRoom;
                 if (!room || !ui.game) return;
@@ -1823,14 +2087,16 @@
             });
             // 게임 종료시 결과 창 표시 (기존 단순 alert에서 개선)
             // 무승부는 생존자 0명인 경우에 대한 예외 처리임. (근거: back.js의 gameOver() 이벤트)
-            socket.on('gameOver', ({ winner, winnerName, reason } = {}) => {
+            socket.on('gameOver', ({ winner, winnerName, reason, ruleName, ruleDesc} = {}) => {
                 if ($('shape-dialog').open) $('shape-dialog').close();
 
                 const reasonText = reason === 'clear'
-                    ? '모든 카드를 내려놓아'
+                    ? '모든 카드를 내려놓아 승리했습니다!'
                     : (reason === 'last'
-                        ? '최후의 1인으로 살아남아'
-                        : '게임이 종료되어');
+                        ? '최후의 1인으로 살아남아 승리했습니다!'
+                        : (reason === 'hidden_rule'
+                            ? `[${ruleName || '히든 룰'}] "${ruleDesc || ''}" 히든 조건을 만족하여 승리했습니다!`
+                            : '게임이 종료되어 승리했습니다!'));
 
                 const displayWinner = winnerName || winner || '플레이어';
                 const isDraw = reason === 'draw';
@@ -1845,7 +2111,16 @@
 
                 $('game-result-description').textContent = isDraw
                     ? '대기실에서 다시 시작할 수 있어요.'
-                    : `${reasonText} 승리했습니다!`;
+                    : reasonText;
+
+                // 게임 종료 시 히든 룰 박스 및 예언가(PROPHET) 지목 UI 정리
+                const hiddenRuleBox = $('hidden-rule-box');
+                const targetWrap = $('hidden-rule-target-wrap');
+                if (hiddenRuleBox) hiddenRuleBox.hidden = true;
+                if (targetWrap) {
+                    targetWrap.hidden = true;
+                    targetWrap.innerHTML = '';
+                }
 
                 // 기존 대기실 복귀 처리
                 ui.game = null;
@@ -2172,10 +2447,60 @@
     });
 
     // 4. HTML 이스케이프 유틸리티
+    // back과 practice에서 쓰는 변수명이 좀 달라서 합치면서 지우고 남길 거 남김
 
     function escapeHtml(text) {
         return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     }
+
+    (() => {
+            const dialog = $('hidden-rule-dialog');
+            const openButton = $('open-hidden-rule');
+            const gameScreen = document.querySelector('[data-screen="game"]');
+
+            window.clearMyHiddenRule = function () {
+                latestHiddenRule = null;
+                if (openButton) openButton.hidden = true;
+                if ($('hidden-rule-dialog-name')) $('hidden-rule-dialog-name').textContent = '';
+                if ($('hidden-rule-dialog-desc')) $('hidden-rule-dialog-desc').textContent = '';
+                if ($('hidden-rule-target-status')) {
+                    $('hidden-rule-target-status').textContent = '';
+                    $('hidden-rule-target-status').hidden = true;
+                }
+                if ($('hidden-rule-prophet-area')) {
+                    $('hidden-rule-prophet-area').hidden = true;
+                }
+                if (dialog && dialog.open) dialog.close();
+            };
+
+            window.setMyHiddenRule = function (rule) {
+                if (!rule || typeof rule.name !== 'string' || typeof rule.desc !== 'string') {
+                    window.clearMyHiddenRule();
+                    return;
+                }
+                latestHiddenRule = { ...rule };
+                if (openButton) openButton.hidden = false;
+                if (!gameScreen.hidden && typeof renderHiddenRuleModal === 'function') {
+                    renderHiddenRuleModal();
+                }
+            };
+            let wasInGame = !gameScreen.hidden;
+            new MutationObserver(() => {
+                const isInGame = !gameScreen.hidden;
+                if (wasInGame && !isInGame) {
+                    window.clearMyHiddenRule();
+                } else if (!wasInGame && isInGame && latestHiddenRule?.name && typeof renderHiddenRuleModal === 'function') {
+                    renderHiddenRuleModal();
+                }
+                wasInGame = isInGame;
+            }).observe(gameScreen, {
+                attributes: true,
+                attributeFilter: ['hidden']
+            });
+
+            
+        })();
+
     </script>
 </body>
 </html>
