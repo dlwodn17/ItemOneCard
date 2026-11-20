@@ -28,6 +28,25 @@ function broadcastGameState(roomId) {
   // 본인 손패(카드 목록)는 해당 소켓에게만 비공개 개별 전송
   room.game.playerzone.forEach(p => {
     io.to(p.socketId).emit('myHandUpdate', p.hand);
+
+
+    console.log('[히든룰 전송 체크]', {
+      enableHiddenRules: room.game.customRules.enableHiddenRules,
+      playerId: p.id,
+      socketId: p.socketId,
+      hiddenRule: p.hiddenRule ? p.hiddenRule.name : null
+    });
+    if (room.game.customRules.enableHiddenRules && p.hiddenRule) {
+      io.to(p.socketId).emit('myHiddenRule', {
+        id: p.hiddenRule.id,
+        name: p.hiddenRule.name,
+        desc: p.hiddenRule.desc,
+        timing: p.hiddenRule.timing,
+        targetId: p.ruleTargetId
+      });
+    }else {
+      io.to(p.socketId).emit('myHiddenRule', null);
+    }
   });
 
   // 게임이 진행 중이고 오버가 아니라면 타이머 구동 (turnTimeLimit * 1000 밀리초)
@@ -61,17 +80,42 @@ function broadcastGameState(roomId) {
 function handleGameEnd(roomId, overResult) {
   const room = rooms[roomId];
   if (!room) return;
-
+    //타이머 설정
   if (room.turnTimer) {
     clearTimeout(room.turnTimer);
     room.turnTimer = null;
   }
 
   const winnerPlayer = room.game ? room.game.playerzone.find(p => p.id === overResult.winner) : null;
+  const winnerLabel = winnerPlayer ? winnerPlayer.name : overResult.winner;
+  const timeText = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  
   io.to(roomId).emit('gameOver', {
     ...overResult,
     winnerName: winnerPlayer ? winnerPlayer.name : overResult.winner
   });
+
+  let endLogMessage = '';
+  if (overResult.reason === 'hidden_rule') {
+    endLogMessage = `히든 룰 발동! [${overResult.ruleName}] ${winnerLabel}님이 승리했습니다! (${overResult.ruleDesc})`;
+  } else if (overResult.reason === 'clear') {
+    endLogMessage = `모든 카드를 내려놓아 ${winnerLabel}님이 승리했습니다!`;
+  } else if (overResult.reason === 'last') {
+    endLogMessage = `최후의 1인으로 살아남아 ${winnerLabel}님이 승리했습니다!`;
+  } else if (overResult.reason === 'draw') {
+    endLogMessage = '생존자가 없어 무승부로 게임이 종료되었습니다.';
+  } else if (winnerLabel) {
+    endLogMessage = `${winnerLabel}님이 승리했습니다!`;
+  }
+
+  if (endLogMessage) {
+    io.to(roomId).emit('receiveChat', {
+      scope: 'room',
+      time: timeText,
+      name: '시스템',
+      message: endLogMessage
+    });
+  }
 
   room.isPlaying = false;
   room.game = null;
@@ -114,6 +158,7 @@ io.on('connection',(socket) => {
     //유저 접속 시
     console.log(`신규 접속: ${socket.id}`);
     socket.currentRoomId = null;
+    socket.playerName = '플레이어';
 
     //플레이어명 전달
     lobbyUsers.push({ socketId: socket.id, name: '플레이어' });
@@ -165,7 +210,13 @@ io.on('connection',(socket) => {
             spectators: [],
             isPlaying: false,
             isPrivate,
-            inviteCode
+            inviteCode,
+            customRules: {
+                turnTimeLimit: 15,
+                startingHandCount: 7,
+                bankruptcyLimit: 15,
+                enableHiddenRules: false
+            }
         };
 
         socket.currentRoomId = newRoomId;
@@ -173,6 +224,69 @@ io.on('connection',(socket) => {
 
         socket.emit('joinRoomSuccess', { roomId: newRoomId, myRole: 'P1', roomData: rooms[newRoomId] });
         io.emit('roomListUpdated', getPublicRoomInfo());
+    });
+
+    // 히든룰 타겟
+    socket.on('setHiddenRuleTarget', ({ targetId } = {}) => {
+        const roomId = socket.currentRoomId;
+        const room = roomId && rooms[roomId];
+        if (!room || !room.isPlaying || !room.game) return;
+
+        const res = room.game.setHiddenRuleTarget(socket.id, targetId);
+        if (!res.success) {
+            return socket.emit('errorMsg', res.msg);
+        }
+
+        const player = room.game.playerzone.find(p => p.socketId === socket.id);
+        if (player && player.hiddenRule && room.game.customRules.enableHiddenRules) {
+            io.to(socket.id).emit('myHiddenRule', {
+                id: player.hiddenRule.id,
+                name: player.hiddenRule.name,
+                desc: player.hiddenRule.desc,
+                targetId: player.ruleTargetId
+            });
+        }
+    });
+
+    // 방장 규칙 변경 요청 처리
+    socket.on('updateRoomRules', (rules) => {
+     
+        const roomId = socket.currentRoomId;
+        if (!roomId || !rooms[roomId]) return;
+        const room = rooms[roomId];
+       
+
+        if (!room.isPrivate || room.hostId !== socket.id) {
+            return socket.emit('errorMsg', '커스텀 방의 방장만 규칙을 변경할 수 있어요.');
+        }
+
+        const isHiddenEnabled = Boolean(
+            rules.enableHiddenRules !== undefined
+                ? rules.enableHiddenRules
+                : rules.hiddenRulesEnabled
+        );
+
+        room.customRules = {
+            turnTimeLimit: Math.min(60, Math.max(5, Number(rules.turnTimeLimit) || 15)),
+            startingHandCount: Math.min(10, Math.max(5, Number(rules.startingHandCount) || 7)),
+            bankruptcyLimit: Math.min(30, Math.max(10, Number(rules.bankruptcyLimit) || 15)),
+            enableHiddenRules: isHiddenEnabled
+        };
+
+        io.to(roomId).emit('roomRulesUpdated', room.customRules);
+
+        // 변경된 상세 규칙을 포함한 메시지 생성
+        const r = room.customRules;
+        const ruleDetails = `턴 제한: ${r.turnTimeLimit}초 | 시작 손패: ${r.startingHandCount}장 | 파산 기준: ${r.bankruptcyLimit}장 | 히든 룰: ${r.enableHiddenRules ? 'ON' : 'OFF'}`;
+        const actionText = rules && rules.isReset
+            ? '방장이 게임 규칙을 기본룰로 초기화했습니다.'
+            : '방장이 게임 규칙을 변경했습니다.';
+        io.to(roomId).emit('receiveChat', {
+            scope: 'room',
+            time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
+            name: '시스템',
+            message: `${actionText} [ ${ruleDetails} ]`
+        });
     });
 
     //기존 방 입장하기 요청
@@ -198,7 +312,7 @@ io.on('connection',(socket) => {
 
         let myRole ='';
 
-        // 먼저온 4명에게 플레ㄹ어, 나머지 2명 관전자 부여
+        // 먼저온 4명에게 플레이어, 나머지 2명 관전자 부여
         if(room.players.length < MAX_PLAYERS){
             myRole =`P${room.players.length + 1}`;
             room.players.push({socketId:socket.id,id:myRole,name: playerName || '플레이어'});
@@ -301,7 +415,7 @@ io.on('connection',(socket) => {
         }
 
         room.isPlaying = true;
-        room.game = new OneCardGame(room.players);
+        room.game = new OneCardGame(room.players,room.customRules);
 
         //게임 시작시 전달 정보
         io.to(roomId).emit('gameStart', {
@@ -316,12 +430,12 @@ io.on('connection',(socket) => {
     });
 
     // 인게임: 카드 제출 처리
-    socket.on('playCard', ({ cardIndex, newShape } = {}) => {
+    socket.on('playCard', ({ cardIndex, newShape, targetId } = {}) => {
         const roomId = socket.currentRoomId;
         const room = roomId && rooms[roomId];
         if (!room || !room.isPlaying || !room.game) return;
 
-        const result = room.game.playCard(socket.id, cardIndex, newShape);
+        const result = room.game.playCard(socket.id, cardIndex, newShape, targetId);
         if (!result.success) {
             return socket.emit('errorMsg', result.msg);
         }
@@ -365,6 +479,23 @@ io.on('connection',(socket) => {
         if (result.overResult && result.overResult.isOver) {
             handleGameEnd(roomId, result.overResult);
         }
+    });
+
+
+
+    // 히든룰: 예언가 대상 지목
+    socket.on('setHiddenRuleTarget', ({ targetId } = {}) => {
+        const roomId = socket.currentRoomId;
+        const room = roomId && rooms[roomId];
+        if (!room || !room.isPlaying || !room.game) return;
+
+        const result = room.game.setHiddenRuleTarget(socket.id, targetId);
+        if (!result.success) {
+            return socket.emit('errorMsg', result.msg);
+        }
+
+        const rule = room.game.getPlayerHiddenRule(socket.id);
+        socket.emit('myHiddenRule', rule);
     });
 
     // 기능 추가 1. 채팅 메시지 처리 (로비 또는 게임방 안)
@@ -579,3 +710,4 @@ function processUserExit(socket){
 server.listen(3000, () => {
     console.log('서버가 3000번 포트에서 실행 중입니다.');
 });
+  
