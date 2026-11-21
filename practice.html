@@ -912,6 +912,14 @@
             <button class="button" type="button" data-shape="clover">♣ 클로버</button>
         </div>
     </dialog>
+
+    <dialog id="swap-dialog" aria-labelledby="swap-title">
+        <div class="dialog-heading">
+            <h2 id="swap-title">스왑 · 패를 교환할 대상 선택</h2>
+            <button class="close-button" id="close-swap" type="button" aria-label="닫기">×</button>
+        </div>
+        <div class="room-type-options" id="swap-options"></div>
+    </dialog>
     <!--히든룰 표시-->
     <dialog id="hidden-rule-dialog" aria-labelledby="hidden-rule-dialog-title">
         <div class="dialog-heading">
@@ -1725,7 +1733,14 @@
 
             function prepareGame() {
                 if (!ui.game) {
-                    ui.game = { hand: [], publicState: null, busy: false, pendingSevenIndex: null };
+                    ui.game = {
+                        hand: [],
+                        publicState: null,
+                        busy: false,
+                        pendingSevenIndex: null,
+                        pendingSwapIndex: null,
+                        pendingSwapButton: null
+                    };
                 }
                 return ui.game;
             }
@@ -1880,7 +1895,7 @@
                 $('south-cards').hidden = isPlayer();
                 $('call-onecard').disabled = !isPlayer();
             }
-            function submitCardToServer(index, newShape = null, button = null) {
+            function submitCardToServer(index, newShape = null, button = null, targetId = null) {
                 const game = ui.game;
                 if (!game) return;
                 game.busy = true;
@@ -1893,7 +1908,7 @@
                 }
 
                 $('draw-pile').disabled = true;
-                socket.emit('playCard', { cardIndex: index, newShape });
+                socket.emit('playCard', { cardIndex: index, newShape, targetId });
 
                 setTimeout(() => {
                     if (ui.game === game && game.busy) {
@@ -1912,6 +1927,28 @@
                     $('shape-dialog').showModal();
                     return;
                 }
+                if (card.itemType === 'swap' || Number(card.number) === 103) {
+                    const candidates = (game.publicState?.players || []).filter(
+                        p => p && p.socketId !== socket.id && !p.isEliminated
+                    );
+                    if (candidates.length === 0) return;
+
+                    const optionsEl = $('swap-options');
+                    optionsEl.replaceChildren();
+                    candidates.forEach(p => {
+                        const optBtn = document.createElement('button');
+                        optBtn.className = 'button';
+                        optBtn.type = 'button';
+                        optBtn.dataset.targetId = p.socketId;
+                        optBtn.textContent = `${p.name} (${p.cardCount}장)`;
+                        optionsEl.append(optBtn);
+                    });
+
+                    game.pendingSwapIndex = index;
+                    game.pendingSwapButton = button || null;
+                    $('swap-dialog').showModal();
+                    return;
+                }
                 submitCardToServer(index, null, button);
             }
             $('close-shape').addEventListener('click', () => {
@@ -1925,6 +1962,29 @@
                 ui.game.pendingSevenIndex = null;
                 $('shape-dialog').close();
                 submitCardToServer(idx, btn.dataset.shape);
+            });
+            $('close-swap').addEventListener('click', () => {
+                if (ui.game) {
+                    ui.game.pendingSwapIndex = null;
+                    ui.game.pendingSwapButton = null;
+                }
+                $('swap-dialog').close();
+            });
+            $('swap-dialog').addEventListener('cancel', () => {
+                if (ui.game) {
+                    ui.game.pendingSwapIndex = null;
+                    ui.game.pendingSwapButton = null;
+                }
+            });
+            $('swap-options').addEventListener('click', event => {
+                const btn = event.target.closest('[data-target-id]');
+                if (!btn || !ui.game || ui.game.pendingSwapIndex === null) return;
+                const idx = ui.game.pendingSwapIndex;
+                const cardBtn = ui.game.pendingSwapButton;
+                ui.game.pendingSwapIndex = null;
+                ui.game.pendingSwapButton = null;
+                $('swap-dialog').close();
+                submitCardToServer(idx, null, cardBtn, btn.dataset.targetId);
             });
             $('draw-pile').addEventListener('click', () => {
                 const game = ui.game;
@@ -2088,6 +2148,7 @@
             // 무승부는 생존자 0명인 경우에 대한 예외 처리임. (근거: back.js의 gameOver() 이벤트)
             socket.on('gameOver', ({ winner, winnerName, reason, ruleName, ruleDesc} = {}) => {
                 if ($('shape-dialog').open) $('shape-dialog').close();
+                if ($('swap-dialog').open) $('swap-dialog').close();
 
                 const reasonText = reason === 'clear'
                     ? '모든 카드를 내려놓아 승리했습니다!'
