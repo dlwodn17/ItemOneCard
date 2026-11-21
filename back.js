@@ -109,7 +109,15 @@ const HIDDEN_RULES_POOL = [
 ];
 
 class OneCardGame {
-  constructor(playerList) {
+  constructor(playerList, customRules = {}) {
+
+    this.customRules = {
+      turnTimeLimit: Number(customRules.turnTimeLimit) || 15,
+      startingHandCount: Number(customRules.startingHandCount) || 7,
+      bankruptcyLimit: Number(customRules.bankruptcyLimit) || 15,
+      enableHiddenRules: Boolean(customRules.enableHiddenRules)
+    };
+
     this.playerzone = playerList.map((p, idx) => ({
       socketId: p.socketId,
       id: `P${idx + 1}`,
@@ -183,7 +191,7 @@ class OneCardGame {
     this.firstOneCardCallerId = null;
     this.undirection = false;
     this.currentshape = null;
-    this.turnTimeLimit = 15;
+    this.turnTimeLimit = this.customRules.turnTimeLimit;
 
     for (const p of this.playerzone) {
       p.hand = [];
@@ -198,7 +206,9 @@ class OneCardGame {
       p.pacifistStreak = 0;
     }
 
-    this.assignHiddenRules();
+    if (this.customRules.enableHiddenRules) {
+      this.assignHiddenRules();
+    }
     this.createCard();
     this.shuffle();
 
@@ -208,7 +218,8 @@ class OneCardGame {
     this.currentshape = initialCard.shape;
 
     // 참가자들에게 7장씩 지급
-    for (let i = 0; i < 7; i++) {
+    const startCount = this.customRules.startingHandCount || 7;
+    for (let i = 0; i < startCount; i++) {
       for (const p of this.playerzone) {
         if (this.deck.length > 0) p.hand.push(this.deck.pop());
       }
@@ -384,7 +395,7 @@ class OneCardGame {
     player.hand.splice(cardIndex, 1);
     this.submitzoneCards.push(card);
 
-    this.turnTimeLimit = 15;
+    this.turnTimeLimit = this.customRules.turnTimeLimit;
     const turnAction = this.checkSpecialCard(card, newShape, playerIndex, targetIndex);
     if (this.attackstack > 0 && (card.type === 'joker' || card.number === 1 || card.number === 2 || card.itemType === 'reflect')) {
       this.lastAttackerId = player.id;
@@ -420,8 +431,16 @@ class OneCardGame {
     const topCard = this.submitzoneCards[this.submitzoneCards.length - 1];
     if (this.attackstack > 0) return this.canDefend(card, topCard);
     if (card.itemType === 'reflect') return false;
-    if (card.type === 'joker' || topCard.type === 'joker' || this.currentshape === 'joker') return true;
-    if (card.type === 'item' || topCard.type === 'item' || this.currentshape === 'item') return true;
+    if (
+      card.type === 'joker' ||
+      topCard.type === 'joker' ||
+      this.currentshape === 'joker' ||
+      card.type === 'item' ||
+      topCard.type === 'item' ||
+      this.currentshape === 'item'
+    ) {
+      return true;
+    }
     return card.number === topCard.number || card.shape === this.currentshape;
   }
 
@@ -596,8 +615,9 @@ class OneCardGame {
     this.updateHiddenRuleStates();
 
     // 15장 이상 파산 처리
+    const bankruptLimit = this.customRules.bankruptcyLimit || 15;
     for (const p of this.playerzone) {
-      if (!p.isEliminated && p.hand.length >= 15) {
+      if (!p.isEliminated && p.hand.length >= bankruptLimit) {
         p.isEliminated = true;
         p.onecard = false;
         p.onecardCalled = false;
@@ -607,17 +627,19 @@ class OneCardGame {
     }
 
     // 1) instant 히든 룰 달성 즉시 승리 확인
-    for (const p of this.playerzone) {
-      if (!p.isEliminated && p.hiddenRule && p.hiddenRule.timing === 'instant') {
-        if (typeof p.hiddenRule.check === 'function' && p.hiddenRule.check(p, this)) {
-          return {
-            isOver: true,
-            winner: p.id,
-            reason: 'hidden_rule',
-            ruleId: p.hiddenRule.id,
-            ruleName: p.hiddenRule.name,
-            ruleDesc: p.hiddenRule.desc
-          };
+    if (this.customRules.enableHiddenRules) {
+      for (const p of this.playerzone) {
+        if (!p.isEliminated && p.hiddenRule && p.hiddenRule.timing === 'instant') {
+          if (typeof p.hiddenRule.check === 'function' && p.hiddenRule.check(p, this)) {
+            return {
+              isOver: true,
+              winner: p.id,
+              reason: 'hidden_rule',
+              ruleId: p.hiddenRule.id,
+              ruleName: p.hiddenRule.name,
+              ruleDesc: p.hiddenRule.desc
+            };
+          }
         }
       }
     }
