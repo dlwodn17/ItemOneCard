@@ -36,17 +36,17 @@ const HIDDEN_RULES_POOL = [
   {
     id: 'ZERO_PLAY_STREAK',
     name: '침묵의 턴',
-    desc: '자신의 턴에 카드를 내지 않고 덱에서 1장을 뽑아 턴을 넘기는 행동을 연속 4턴 성공하면 즉시 승리',
+    desc: '자신의 턴에 카드를 내지 않고 덱에서 1장을 뽑아 턴을 넘기는 행동을 연속 8턴 성공하면 즉시 승리',
     timing: 'instant',
-    check: p => p.zeroPlayStreak >= 4
+    check: p => p.zeroPlayStreak >= 8
   },
   {
     id: 'MEGA_COUNTER',
     name: '대반격의 서막',
-    desc: '누적 공격 페널티가 8장 이상 쌓인 상태에서 공격 카드나 방어 아이템으로 막아내거나 넘기면 즉시 승리',
+    desc: '누적 공격 페널티가 5장 이상 쌓인 상태에서 공격 카드나 방어 아이템으로 막아내거나 넘기면 즉시 승리',
     timing: 'trigger',
     event: 'mega_counter',
-    check: (p, eventData) => eventData.playerId === p.id && eventData.prevAttackStack >= 8
+    check: (p, eventData) => eventData.playerId === p.id && eventData.prevAttackStack >= 5
   },
   {
     id: 'SNIPER_FINISH',
@@ -109,7 +109,7 @@ const HIDDEN_RULES_POOL = [
 ];
 
 class OneCardGame {
-  constructor(playerList,customRules={}) {
+  constructor(playerList, customRules = {}) {
 
     this.customRules = {
       turnTimeLimit: Number(customRules.turnTimeLimit) || 15,
@@ -218,7 +218,7 @@ class OneCardGame {
     this.currentshape = initialCard.shape;
 
     // 참가자들에게 7장씩 지급
-    const startCount = this.customRules.startingHandCount || 7 ;
+    const startCount = this.customRules.startingHandCount || 7;
     for (let i = 0; i < startCount; i++) {
       for (const p of this.playerzone) {
         if (this.deck.length > 0) p.hand.push(this.deck.pop());
@@ -406,7 +406,7 @@ class OneCardGame {
     // 다른 곳의 playerIndex는 모두 playerzone이 섞이기 전에 사용되거나, 
     // 배열 순서를 바꾸지 않는 메서드에 있음
 
-    if (prevAttackStack >= 8) {
+    if (prevAttackStack >= 5) {
       const counterResult = this.checkTriggerRules('mega_counter', {
         playerId: player.id,
         prevAttackStack
