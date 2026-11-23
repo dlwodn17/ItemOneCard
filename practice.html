@@ -3214,6 +3214,8 @@
                 if (!topCard) return true;
 
                 if (pub.attackStack > 0) {
+                    if (topCard.itemType === 'reflect') return false;
+                    if (card.itemType === 'reflect') return true;
                     if (topCard.number === 2) {
                         if (card.number === 2 || card.type === 'joker') return true;
                         if (card.number === 3 || card.number === 1) {
