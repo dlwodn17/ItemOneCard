@@ -1973,6 +1973,53 @@
                 font-size: 8px;
             }
         }
+
+        /* 원카드 버튼 관련 팝업 */
+        #onecard-notice-dialog {
+            width: min(360px, calc(100% - 32px));
+            border-radius: 18px;
+            text-align: center;
+            word-break: keep-all;
+            box-shadow: 0 20px 60px #203b5733;
+        }
+
+        #onecard-notice-title {
+            font-size: 18px;
+        }
+
+        #onecard-notice-dialog .dialog-hint {
+            margin-bottom: 12px;
+            font-size: 13px;
+            line-height: 1.65;
+        }
+
+        @media (prefers-reduced-motion: no-preference) {
+            #onecard-notice-dialog[open] {
+                animation: game-result-appear .25s ease-out;
+            }
+        }
+
+        /* 초대코드 복사 UI */
+        .invite-code-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .invite-copy-button {
+            padding: 3px 8px;
+            font-size: 12px;
+            line-height: 1.4;
+            white-space: nowrap;
+        }
+
+        .invite-copy-status {
+            min-width: 4.5em;
+            color: var(--blue);
+            font-size: 11px;
+            font-weight: 700;
+            white-space: nowrap;
+        }
     </style>
 </head>
 
@@ -2300,6 +2347,16 @@
         </button>
     </dialog>
 
+    <dialog id="onecard-notice-dialog" aria-labelledby="onecard-notice-title" aria-describedby="onecard-notice-description">
+        <div class="game-result-card" aria-hidden="true">!</div>
+        <h2 id="onecard-notice-title">지금은 원카드를 외칠 수 없어요</h2>
+        <p id="onecard-notice-description" class="dialog-hint">
+            손패가 1장이고 아직 원카드를 외치지 않은 사람이 있을 때
+            사용할 수 있어요.
+        </p>
+        <button id="close-onecard-notice" class="button primary dialog-submit" type="button" autofocus>확인</button>
+    </dialog>
+
     <!-- 규칙 변경창 HTML -->
     <dialog id="rules-dialog" aria-labelledby="rules-title">
         <div class="dialog-heading">
@@ -2399,7 +2456,7 @@
         );
         const MAX_PLAYERS = 4;
         const MAX_CAPACITY = 6;
-        const me = { id: 'user_' + Math.random().toString(36).substr(2, 9), name: '플레이어_' + Math.floor(Math.random() * 100) };
+        const me = {id: 'user_' + Math.random().toString(36).substr(2, 9), name: '플레이어_' + Math.floor(Math.random() * 100)};
         const state = {
             screen: 'lobby',
             currentRoom: null,
@@ -2457,6 +2514,12 @@
         // 2. 현재 데이터를 화면에 표시.
         function showScreen(screen, focus = true) {
             state.screen = screen;
+
+            const notice = $('onecard-notice-dialog');
+            if (screen !== 'game' && notice.open) {
+                notice.close();
+            }
+
             document.querySelectorAll('[data-screen]').forEach(section => {
                 section.hidden = section.dataset.screen !== screen;
             });
@@ -2469,7 +2532,7 @@
             }
 
             if (focus) {
-                $(screen === 'lobby' ? 'lobby-title' : 'waiting-title').focus({ preventScroll: true });
+                $(screen === 'lobby' ? 'lobby-title' : 'waiting-title').focus({preventScroll: true});
             }
         }
 
@@ -2527,11 +2590,40 @@
             $('waiting-title').textContent = room.title;
 
             if (room.isPrivate && room.inviteCode) {
-                $('waiting-number').innerHTML = `
-                    <span class="invite-code-line">
-                        <span class="muted">커스텀 방 · 초대 코드</span>
-                        <strong class="invite-code-badge" id="invite-code-value">${escapeHTML(room.inviteCode)}</strong>
-                    </span>`;
+                const inviteCode = room.inviteCode;
+
+                if ($('invite-code-value')?.textContent !== inviteCode) {
+                    $('waiting-number').innerHTML = `
+            <span class="invite-code-line">
+                <span class="muted">커스텀 방 · 초대 코드</span>
+                <span class="invite-code-actions">
+                    <strong class="invite-code-badge" id="invite-code-value">${escapeHTML(inviteCode)}</strong>
+                    <button class="button invite-copy-button" id="copy-invite-code"
+                        type="button" aria-label="초대 코드 복사">복사</button>
+                    <span class="invite-copy-status" id="invite-copy-status" role="status"></span>
+                </span>
+            </span>`;
+
+                    const status = $('invite-copy-status');
+                    let copyStatusTimer;
+
+                    $('copy-invite-code').addEventListener('click', async event => {
+                        event.stopPropagation(); // 복사 클릭이 채팅 전송 처리로 넘어가지 않게 함
+
+                        let message = '복사 완료';
+                        try {
+                            await navigator.clipboard.writeText(inviteCode);
+                        } catch {
+                            message = '복사 실패';
+                        }
+
+                        clearTimeout(copyStatusTimer);
+                        status.textContent = message;
+                        copyStatusTimer = setTimeout(() => {
+                            status.textContent = '';
+                        }, 2000);
+                    });
+                }
             } else {
                 $('waiting-number').textContent = `ROOM ${room.id}`;
             }
@@ -2754,7 +2846,7 @@
         })();
 
         // 서버로부터 게임 시작 신호를 받았을 때 게임판 화면으로 전환
-        socket.on('gameStart', ({ players, spectators, hostId }) => {
+        socket.on('gameStart', ({players, spectators, hostId}) => {
             // 결과 창 닫기 전에 방장이 게임 시작시, 결과창 자동으로 닫히게 하는 로직
             if ($('game-result-dialog').open) {
                 $('game-result-dialog').close();
@@ -2776,14 +2868,14 @@
         });
 
         // 서버로부터 방 입장 성공 신호를 받았을 때
-        socket.on('joinRoomSuccess', ({ roomId, myRole, roomData }) => {
+        socket.on('joinRoomSuccess', ({roomId, myRole, roomData}) => {
             state.currentRoom = roomData;
             renderWaiting();
             showScreen('waiting');
         });
 
         // 방 안의 유저 상태(입장/퇴장/승격)가 실시간으로 바뀔 때
-        socket.on('roomStateUpdated', ({ players, spectators, hostId }) => {
+        socket.on('roomStateUpdated', ({players, spectators, hostId}) => {
             if (state.currentRoom) {
                 state.currentRoom.players = players;
                 state.currentRoom.spectators = spectators;
@@ -2792,9 +2884,26 @@
             }
         });
 
+        function showErrorMessage(message) {
+                if (message !== '원카드 선언 대상이 없습니다.') {
+                    alert(message);
+                    return;
+                }
+
+                const notice = $('onecard-notice-dialog');
+                if (state.screen === 'game' && !notice.open) {
+                    notice.showModal();
+                }
+            }
+
+            $('close-onecard-notice').addEventListener('click', event => {
+                event.stopPropagation(); // 확인 클릭이 채팅 전송 처리로 넘어가지 않게 함
+                $('onecard-notice-dialog').close();
+            });
+
         // 에러 메시지 수신 시
         socket.on('errorMsg', (msg) => {
-            alert(msg);
+            showErrorMessage(msg);
         });
 
 
@@ -2834,7 +2943,7 @@
                         btn.className = 'button';
                         btn.textContent = `${target.name} (${target.id})`;
                         btn.addEventListener('click', () => {
-                            socket.emit('setHiddenRuleTarget', { targetId: target.id });
+                            socket.emit('setHiddenRuleTarget', {targetId: target.id});
                         });
                         targetsEl.append(btn);
                     });
@@ -2904,7 +3013,7 @@
             const currentLatestName = $('profile-name') ? $('profile-name').textContent.trim() : '플레이어';
 
             // 최신 닉네임을 담아서 서버로 전송
-            socket.emit('createRoom', { title, playerName: currentLatestName, roomType });
+            socket.emit('createRoom', {title, playerName: currentLatestName, roomType});
 
             //  만약 클라이언트가 관리하는 me 객체나 state가 있다면 여기서 같이 동기화
             if (typeof me !== 'undefined') me.name = currentLatestName;
@@ -2954,7 +3063,7 @@
                     e.preventDefault(); // 세로 스크롤 방지
                     myHandEl.scrollLeft += e.deltaY; // 세로 휠 값을 가로 스크롤 이동량으로 전환
                 }
-            }, { passive: false });
+            }, {passive: false});
         }
 
     </script>
@@ -2967,7 +3076,7 @@
          */
         (() => {
             // 추가 UI 상태는 이 범위 안에만 둔다. 기존 state에는 필드를 추가하지 않음.
-            const ui = { page: 1, screen: '', roomId: null, game: null };
+            const ui = {page: 1, screen: '', roomId: null, game: null};
             const roomChat = $('room-chat'); // 대기실과 인게임이 이 채팅 DOM 하나를 공유.
             const gameScreen = document.querySelector('[data-screen="game"]');
 
@@ -2983,9 +3092,9 @@
                 $('previous-page').disabled = ui.page === 1;
                 $('next-page').disabled = ui.page === pages;
             }
-            $('previous-page').addEventListener('click', () => { ui.page--; updateRoomPages(); });
-            $('next-page').addEventListener('click', () => { ui.page++; updateRoomPages(); });
-            new MutationObserver(updateRoomPages).observe($('room-list'), { childList: true });
+            $('previous-page').addEventListener('click', () => {ui.page--; updateRoomPages();});
+            $('next-page').addEventListener('click', () => {ui.page++; updateRoomPages();});
+            new MutationObserver(updateRoomPages).observe($('room-list'), {childList: true});
 
             // 빠른 입장은 새 Socket 요청 대신 기존 방 입장 버튼을 클릭.
             $('quick-join').addEventListener('click', () => {
@@ -3027,7 +3136,7 @@
                 if (!code) return;
 
                 const currentLatestName = $('profile-name') ? $('profile-name').textContent.trim() : me.name;
-                socket.emit('joinByInviteCode', { code, playerName: currentLatestName });
+                socket.emit('joinByInviteCode', {code, playerName: currentLatestName});
                 $('custom-dialog').close();
             });
 
@@ -3041,7 +3150,7 @@
                 row.className = 'chat-message';
                 const time = document.createElement('time');
                 time.dateTime = new Date().toISOString();
-                time.textContent = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+                time.textContent = new Date().toLocaleTimeString('ko-KR', {hour: '2-digit', minute: '2-digit', hour12: false});
                 const name = document.createElement('strong');
                 name.textContent = me.name;
                 row.append(time, name, document.createTextNode(message));
@@ -3064,9 +3173,9 @@
             $('online-name').textContent = me.name;
 
             // 4. 인게임 UI와 모션 (back.js · server.js 소켓 연동)
-            const SUIT_MAP = { spade: '♠', heart: '♥', diamond: '♦', clover: '♣', joker: '🃏' };
-            const RANK_MAP = { 1: 'A', 11: 'J', 12: 'Q', 13: 'K' };
-            const SHAPE_KO = { spade: '♠ 스페이드', heart: '♥ 하트', diamond: '♦ 다이아', clover: '♣ 클로버', joker: '🃏 조커' };
+            const SUIT_MAP = {spade: '♠', heart: '♥', diamond: '♦', clover: '♣', joker: '🃏'};
+            const RANK_MAP = {1: 'A', 11: 'J', 12: 'Q', 13: 'K'};
+            const SHAPE_KO = {spade: '♠ 스페이드', heart: '♥ 하트', diamond: '♦ 다이아', clover: '♣ 클로버', joker: '🃏 조커'};
 
             function prepareGame() {
                 if (!ui.game) {
@@ -3156,7 +3265,7 @@
             };
 
             function toDisplayCard(card) {
-                if (!card) return { suit: '', rank: '', isRed: false };
+                if (!card) return {suit: '', rank: '', isRed: false};
 
                 const item = card.type === 'item'
                     ? ITEM_CARD_DESIGNS[card.itemType]
@@ -3192,7 +3301,7 @@
                 const rank = RANK_MAP[card.number] || String(card.number);
                 const isRed = card.shape === 'heart' || card.shape === 'diamond';
 
-                return { suit, rank, isRed };
+                return {suit, rank, isRed};
             }
 
             function isPlayer() {
@@ -3320,7 +3429,7 @@
                 }
 
                 $('draw-pile').disabled = true;
-                socket.emit('playCard', { cardIndex: index, newShape, targetId });
+                socket.emit('playCard', {cardIndex: index, newShape, targetId});
 
                 setTimeout(() => {
                     if (ui.game === game && game.busy) {
@@ -3457,7 +3566,7 @@
 
                 wrap.querySelectorAll('[data-prophet-target]').forEach(btn => {
                     btn.addEventListener('click', () => {
-                        socket.emit('setHiddenRuleTarget', { targetId: btn.dataset.prophetTarget });
+                        socket.emit('setHiddenRuleTarget', {targetId: btn.dataset.prophetTarget});
                     });
                 });
             }
@@ -3558,7 +3667,7 @@
             });
             // 게임 종료시 결과 창 표시 (기존 단순 alert에서 개선)
             // 무승부는 생존자 0명인 경우에 대한 예외 처리임. (근거: back.js의 gameOver() 이벤트)
-            socket.on('gameOver', ({ winner, winnerName, reason, ruleName, ruleDesc } = {}) => {
+            socket.on('gameOver', ({winner, winnerName, reason, ruleName, ruleDesc} = {}) => {
                 if ($('shape-dialog').open) $('shape-dialog').close();
                 if ($('swap-dialog').open) $('swap-dialog').close();
 
@@ -3640,7 +3749,7 @@
                         renderGamePlayers();
                         if (ui.screen !== 'game') {
                             gameScreen.classList.add('screen-slide-in');
-                            $('game-title').focus({ preventScroll: true });
+                            $('game-title').focus({preventScroll: true});
                         }
                     } else if (screen === 'waiting') {
                         ui.game = null;
@@ -3649,8 +3758,8 @@
                 ui.screen = screen;
             }
             const screenObserver = new MutationObserver(syncInterface);
-            document.querySelectorAll('[data-screen]').forEach(section => screenObserver.observe(section, { attributes: true, attributeFilter: ['hidden'] }));
-            new MutationObserver(syncInterface).observe($('waiting-seats'), { childList: true });
+            document.querySelectorAll('[data-screen]').forEach(section => screenObserver.observe(section, {attributes: true, attributeFilter: ['hidden']}));
+            new MutationObserver(syncInterface).observe($('waiting-seats'), {childList: true});
             updateRoomPages();
             syncInterface();
         })();
@@ -3713,8 +3822,8 @@
             // 현재 화면 상태에 따라 target 자동 설정 ('lobby' 또는 'room')
             const target = (state.screen === 'lobby') ? 'lobby' : 'room';
 
-            console.log("채팅 전송:", { message, target });
-            socket.emit('chatMessage', { message, target });
+            console.log("채팅 전송:", {message, target});
+            socket.emit('chatMessage', {message, target});
 
             inputElement.value = '';
         }
@@ -3748,10 +3857,10 @@
 
         //이모티콘 전송 및 말풍선 출력 처리
         function sendEmoticon(emoticon) {
-            socket.emit('sendEmoticon', { emoticonId: emoticon });
+            socket.emit('sendEmoticon', {emoticonId: emoticon});
         }
 
-        socket.on('receiveEmoticon', ({ socketId, emoticonId }) => {
+        socket.on('receiveEmoticon', ({socketId, emoticonId}) => {
             // 이미 3번 함수가 좌석에 심어둔 data-socket-id를 기준으로 정확한 자리를 탐색
             const targetSeat = document.querySelector(`.table-seat[data-socket-id="${socketId}"]`);
             if (!targetSeat) return;
@@ -3895,7 +4004,7 @@
             const trimmedName = newName.trim().substring(0, 10);
 
             // 서버로 닉네임 변경 요청 전송
-            socket.emit('updateName', { playerName: trimmedName });
+            socket.emit('updateName', {playerName: trimmedName});
         }
 
         // 2. 프로필 영역 연필 버튼 이벤트 연결
@@ -3911,7 +4020,7 @@
         }
 
         // 4. 서버로부터 변경 성공 응답을 받았을 때 화면에 즉시 반영
-        socket.on('nameUpdated', ({ socketId, newName }) => {
+        socket.on('nameUpdated', ({socketId, newName}) => {
             if (socketId === socket.id) {
                 if ($('profile-name')) $('profile-name').textContent = newName;
                 if ($('online-name')) $('online-name').textContent = newName;
@@ -3950,7 +4059,7 @@
                     window.clearMyHiddenRule();
                     return;
                 }
-                latestHiddenRule = { ...rule };
+                latestHiddenRule = {...rule};
                 if (openButton) openButton.hidden = false;
                 if (!gameScreen.hidden && typeof renderHiddenRuleModal === 'function') {
                     renderHiddenRuleModal();
