@@ -153,6 +153,7 @@
             text-align: left;
         }
 
+
         .profile-details span {
             display: block;
             color: var(--muted);
@@ -625,6 +626,34 @@
             gap: 9px;
             padding: 9px 0;
             overflow-wrap: anywhere;
+        }
+
+        .online-bgm-footer {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--line);
+        }
+
+        .bgm-text-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            margin: 0;
+            padding: 0;
+            border: 0;
+            background: none;
+            color: var(--blue);
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.5;
+            white-space: nowrap;
+        }
+
+        .bgm-text-toggle:hover {
+            text-decoration: underline;
         }
 
         .online-dot {
@@ -2072,6 +2101,9 @@
                             <small>나</small>
                         </li>
                     </ul>
+                    <div class="online-bgm-footer">
+                        <button type="button" id="toggle-bgm" onclick="BgmPlayer.toggle()" class="bgm-text-toggle">🎵 BGM ON</button>
+                    </div>
                 </section>
             </aside>
 
@@ -3729,6 +3761,7 @@
             // 5. 기존 화면 전환과 참가자 갱신을 감지해 추가 UI만 맞춘다.
             function syncInterface() {
                 const screen = state.screen;
+                window.BgmPlayer?.setMode(screen);
                 document.body.dataset.uiScreen = screen;
                 $('online-panel').hidden = screen !== 'lobby';
                 if (screen === 'lobby') {
@@ -4083,6 +4116,383 @@
             });
 
 
+        })();
+
+
+        //bgm 인터페이스 - 로비, 대기방, 인게임 화면 전환마다 다른 음악 재생
+        // 음원은 별도 라이브러리 없이 내장된 Web Audio API로 제미나이 작곡
+        (() => {
+            const BgmPlayer = (() => {
+                const STORAGE_KEY = 'lastone_bgm_muted';
+                let ctx = null;
+                let masterGain = null;
+                let filterNode = null;
+                let delayNode = null;
+                let feedbackGain = null;
+                let wetGain = null;
+                let timerId = null;
+                let step = 0;
+                let mode = 'lobby';
+                let muted = localStorage.getItem(STORAGE_KEY) === 'true';
+
+                const SHARED_CHORDS = [
+                    [293.66, 369.99, 440.00, 554.37],
+                    [329.63, 415.30, 493.88, 554.37],
+                    [369.99, 440.00, 554.37, 659.25],
+                    [220.00, 329.63, 369.99, 554.37]
+                ];
+
+                const LOBBY_LINE = [
+                    440.00, 0, 0, 369.99, 0, 0, 440.00, 0,
+                    415.30, 0, 0, 329.63, 0, 0, 415.30, 0,
+                    440.00, 0, 0, 369.99, 0, 0, 554.37, 0,
+                    369.99, 0, 0, 329.63, 0, 0, 440.00, 0
+                ];
+                const LOBBY_BASS = [
+                    146.83, 0, 0, 220.00, 0, 0, 146.83, 0,
+                    164.81, 0, 0, 246.94, 0, 0, 164.81, 0,
+                    185.00, 0, 0, 277.18, 0, 0, 185.00, 0,
+                    220.00, 0, 0, 329.63, 0, 0, 185.00, 0
+                ];
+
+                const WAITING_LINE = [
+                    293.66, 0, 440.00, 0, 554.37, 0, 440.00, 554.37,
+                    329.63, 0, 493.88, 0, 554.37, 0, 493.88, 554.37,
+                    369.99, 0, 554.37, 0, 659.25, 0, 554.37, 659.25,
+                    220.00, 0, 369.99, 0, 554.37, 0, 440.00, 554.37
+                ];
+                const WAITING_BASS = [
+                    146.83, 0, 220.00, 0, 146.83, 0, 220.00, 0,
+                    164.81, 0, 246.94, 0, 164.81, 0, 246.94, 0,
+                    185.00, 0, 277.18, 0, 185.00, 0, 277.18, 0,
+                    220.00, 0, 329.63, 0, 220.00, 0, 185.00, 0
+                ];
+
+                const GAME_LINE = [
+                    0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0,
+                    0, 0, 0, 0, 0, 0, 0, 0
+                ];
+                const GAME_BASS = [
+                    146.83, 0, 220.00, 146.83, 220.00, 0, 146.83, 220.00,
+                    164.81, 0, 246.94, 164.81, 246.94, 0, 164.81, 246.94,
+                    185.00, 0, 277.18, 185.00, 277.18, 0, 185.00, 277.18,
+                    220.00, 0, 329.63, 220.00, 329.63, 0, 220.00, 185.00
+                ];
+
+                function normalizeMode(nextMode) {
+                    if (nextMode === 'game') return 'game';
+                    if (nextMode === 'waiting') return 'waiting';
+                    return 'lobby';
+                }
+
+                function getPattern() {
+                    if (mode === 'game') {
+                        return {
+                            chords: SHARED_CHORDS,
+                            line: GAME_LINE,
+                            bass: GAME_BASS,
+                            intervalMs: 195,
+                            filterFreq: 1720,
+                            delaySec: 0.18,
+                            feedbackGain: 0.13,
+                            wetGain: 0.14,
+                            masterGain: 0.095,
+                            lineType: 'sine',
+                            lineGain: 0.0,
+                            chordGain: 0.11,
+                            bassGain: 0.29,
+                            pulseGain: 0.05
+                        };
+                    }
+                    if (mode === 'waiting') {
+                        return {
+                            chords: SHARED_CHORDS,
+                            line: WAITING_LINE,
+                            bass: WAITING_BASS,
+                            intervalMs: 225,
+                            filterFreq: 1680,
+                            delaySec: 0.19,
+                            feedbackGain: 0.14,
+                            wetGain: 0.15,
+                            masterGain: 0.09,
+                            lineType: 'sine',
+                            lineGain: 0.23,
+                            chordGain: 0.10,
+                            bassGain: 0.28,
+                            pulseGain: 0.0
+                        };
+                    }
+                    return {
+                        chords: SHARED_CHORDS,
+                        line: LOBBY_LINE,
+                        bass: LOBBY_BASS,
+                        intervalMs: 230,
+                        filterFreq: 1360,
+                        delaySec: 0.23,
+                        feedbackGain: 0.16,
+                        wetGain: 0.17,
+                        masterGain: 0.082,
+                        lineType: 'sine',
+                        lineGain: 0.20,
+                        chordGain: 0.11,
+                        bassGain: 0.27,
+                        pulseGain: 0.0
+                    };
+                }
+
+                function initAudio() {
+                    if (muted) return false;
+                    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioCtx) return false;
+                    if (!ctx) {
+                        ctx = new AudioCtx();
+
+                        filterNode = ctx.createBiquadFilter();
+                        filterNode.type = 'lowpass';
+                        filterNode.frequency.value = 1360;
+                        filterNode.Q.value = 0.5;
+
+                        delayNode = ctx.createDelay(1.0);
+                        delayNode.delayTime.value = 0.23;
+
+                        feedbackGain = ctx.createGain();
+                        feedbackGain.gain.value = 0.16;
+
+                        wetGain = ctx.createGain();
+                        wetGain.gain.value = 0.17;
+
+                        masterGain = ctx.createGain();
+                        masterGain.gain.value = 0.082;
+
+                        filterNode.connect(masterGain);
+                        filterNode.connect(delayNode);
+                        delayNode.connect(feedbackGain);
+                        feedbackGain.connect(delayNode);
+                        delayNode.connect(wetGain);
+                        wetGain.connect(masterGain);
+                        masterGain.connect(ctx.destination);
+                    }
+                    const cfg = getPattern();
+                    if (filterNode && delayNode && feedbackGain && wetGain && masterGain) {
+                        filterNode.frequency.setTargetAtTime(cfg.filterFreq, ctx.currentTime, 0.15);
+                        delayNode.delayTime.setTargetAtTime(cfg.delaySec, ctx.currentTime, 0.15);
+                        feedbackGain.gain.setTargetAtTime(cfg.feedbackGain, ctx.currentTime, 0.15);
+                        wetGain.gain.setTargetAtTime(cfg.wetGain, ctx.currentTime, 0.15);
+                        masterGain.gain.setTargetAtTime(cfg.masterGain, ctx.currentTime, 0.15);
+                    }
+                    if (ctx.state === 'suspended') {
+                        ctx.resume().catch(() => {});
+                    }
+                    return true;
+                }
+
+                function playSoftPulse(now, peak, dur = 0.06) {
+                    if (!ctx || !filterNode || peak <= 0) return;
+                    const sampleCount = Math.max(1, Math.floor(ctx.sampleRate * dur));
+                    const buffer = ctx.createBuffer(1, sampleCount, ctx.sampleRate);
+                    const data = buffer.getChannelData(0);
+                    for (let i = 0; i < sampleCount; i++) {
+                        data[i] = (Math.random() * 2 - 1) * (1 - i / sampleCount);
+                    }
+
+                    const noise = ctx.createBufferSource();
+                    noise.buffer = buffer;
+
+                    const bp = ctx.createBiquadFilter();
+                    bp.type = 'bandpass';
+                    bp.frequency.setValueAtTime(920, now);
+                    bp.Q.setValueAtTime(1.1, now);
+
+                    const env = ctx.createGain();
+                    env.gain.setValueAtTime(0.0001, now);
+                    env.gain.linearRampToValueAtTime(peak, now + 0.006);
+                    env.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+                    noise.connect(bp);
+                    bp.connect(env);
+                    env.connect(filterNode);
+
+                    noise.start(now);
+                    noise.stop(now + dur + 0.02);
+                }
+
+                function playWarmNote(freq, dur, gainPeak, now, options = {}) {
+                    if (!freq || freq <= 0 || !ctx || !filterNode) return;
+                    const {
+                        type = 'sine',
+                        detuneCents = 6,
+                        vibratoHz = 4.4,
+                        vibratoCents = 4,
+                        attack = 0.02
+                    } = options;
+
+                    const oscA = ctx.createOscillator();
+                    const oscB = ctx.createOscillator();
+                    const env = ctx.createGain();
+                    const voiceGain = ctx.createGain();
+
+                    oscA.type = type;
+                    oscB.type = 'sine';
+                    oscA.frequency.setValueAtTime(freq, now);
+                    oscB.frequency.setValueAtTime(freq, now);
+                    oscA.detune.setValueAtTime(-detuneCents, now);
+                    oscB.detune.setValueAtTime(detuneCents, now);
+
+                    const lfo = ctx.createOscillator();
+                    const lfoGain = ctx.createGain();
+                    lfo.frequency.setValueAtTime(vibratoHz, now);
+                    lfoGain.gain.setValueAtTime(0.001, now);
+                    lfoGain.gain.linearRampToValueAtTime(vibratoCents, now + Math.min(0.25, dur * 0.6));
+                    lfo.connect(lfoGain);
+                    lfoGain.connect(oscA.detune);
+
+                    voiceGain.gain.value = 0.58;
+                    const safeAttack = Math.min(attack, dur * 0.4);
+                    env.gain.setValueAtTime(0.0001, now);
+                    env.gain.linearRampToValueAtTime(gainPeak, now + safeAttack);
+                    env.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+
+                    oscA.connect(env);
+                    oscB.connect(env);
+                    env.connect(voiceGain);
+                    voiceGain.connect(filterNode);
+
+                    const stopAt = now + dur + 0.06;
+                    oscA.start(now);
+                    oscB.start(now);
+                    lfo.start(now);
+                    oscA.stop(stopAt);
+                    oscB.stop(stopAt);
+                    lfo.stop(stopAt);
+                }
+
+                function playStep() {
+                    if (muted || !ctx || ctx.state !== 'running') return;
+                    const cfg = getPattern();
+                    const idx = step % cfg.line.length;
+                    const barIdx = Math.floor((step % 32) / 8);
+                    const beatInBar = step % 8;
+                    step++;
+
+                    const now = ctx.currentTime;
+                    const stepSec = cfg.intervalMs / 1000;
+                    const isGame = mode === 'game';
+                    const isWaiting = mode === 'waiting';
+
+                    if (isGame) {
+                        if (beatInBar === 0 || beatInBar === 4) {
+                            const chord = cfg.chords[barIdx % cfg.chords.length];
+                            chord.forEach((freq, i) => {
+                                playWarmNote(freq, stepSec * 4.2, cfg.chordGain, now + i * 0.025, {
+                                    type: 'sine',
+                                    detuneCents: 6,
+                                    vibratoCents: 3,
+                                    attack: 0.025
+                                });
+                            });
+                        }
+                        if (beatInBar % 2 === 1) {
+                            playSoftPulse(now, cfg.pulseGain, 0.045);
+                        }
+                    } else if (beatInBar === 0) {
+                        const chord = cfg.chords[barIdx % cfg.chords.length];
+                        chord.forEach((freq, i) => {
+                            playWarmNote(freq, stepSec * 7.6, cfg.chordGain, now + i * 0.04, {
+                                type: 'sine',
+                                detuneCents: 5,
+                                vibratoCents: 2.5,
+                                attack: isWaiting ? 0.04 : 0.06
+                            });
+                        });
+                    }
+
+                    if (cfg.lineGain > 0 && cfg.line[idx] > 0) {
+                        playWarmNote(cfg.line[idx], stepSec * (isWaiting ? 1.8 : 2.0), cfg.lineGain, now, {
+                            type: cfg.lineType,
+                            detuneCents: 6,
+                            vibratoHz: 4.6,
+                            vibratoCents: isWaiting ? 3.2 : 3.5,
+                            attack: isWaiting ? 0.02 : 0.025
+                        });
+                    }
+
+                    if (cfg.bassGain > 0 && cfg.bass[idx] > 0) {
+                        playWarmNote(
+                            cfg.bass[idx],
+                            stepSec * (isGame ? 2.75 : (isWaiting ? 2.3 : 2.6)),
+                            cfg.bassGain,
+                            now,
+                            {
+                                type: 'sine',
+                                detuneCents: isGame ? 6 : 2,
+                                vibratoCents: isGame ? 2 : 0,
+                                attack: isGame ? 0.065 : (isWaiting ? 0.04 : 0.045)
+                            }
+                        );
+                    }
+                }
+
+                function restartLoop() {
+                    if (timerId) {
+                        clearInterval(timerId);
+                        timerId = null;
+                    }
+                    if (muted) return;
+                    if (!initAudio()) return;
+
+                    const cfg = getPattern();
+                    playStep();
+                    timerId = setInterval(playStep, cfg.intervalMs);
+                }
+
+                function syncButton() {
+                    const btn = document.getElementById('toggle-bgm');
+                    if (!btn) return;
+                    btn.textContent = muted ? '🔇 BGM OFF' : '🎵 BGM ON';
+                    btn.setAttribute('aria-pressed', String(muted));
+                }
+
+                function setMode(nextMode) {
+                    const normalized = normalizeMode(nextMode);
+                    if (mode === normalized && timerId) return;
+                    mode = normalized;
+                    step = 0;
+                    if (!muted && ctx) restartLoop();
+                }
+
+                function setMuted(nextMuted) {
+                    muted = Boolean(nextMuted);
+                    localStorage.setItem(STORAGE_KEY, String(muted));
+                    syncButton();
+                    if (muted) {
+                        if (timerId) {
+                            clearInterval(timerId);
+                            timerId = null;
+                        }
+                    } else {
+                        restartLoop();
+                    }
+                }
+
+                function toggle() {
+                    setMuted(!muted);
+                }
+
+                document.addEventListener('pointerdown', () => {
+                    if (!muted && !timerId) restartLoop();
+                }, { once: true });
+
+                if (document.readyState === 'loading') {
+                    document.addEventListener('DOMContentLoaded', syncButton);
+                } else {
+                    syncButton();
+                }
+
+                return { setMode, toggle, setMuted };
+            })();
+            window.BgmPlayer = BgmPlayer;
         })();
 
     </script>
